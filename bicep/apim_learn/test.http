@@ -1,0 +1,146 @@
+### ============================================================================
+### CRUD Function App テスト（VS Code REST Client 拡張機能用）
+### ============================================================================
+### 使い方:
+###   1. VS Code に REST Client 拡張機能をインストール
+###   2. @baseUrl をデプロイ先の URL に変更
+###   3. 各リクエストの上にある "Send Request" をクリック
+###
+### ローカル実行の場合:
+###   cd python && func start
+###   @baseUrl = http://localhost:7071/api
+### ============================================================================
+
+@baseUrl = https://<apim-service-name>.azure-api.net/crud
+@apiKey = <apim-subscription-key>
+
+### -----------------------------------------------------------
+### 1. 全アイテム一覧の取得（空の状態）
+### -----------------------------------------------------------
+GET {{baseUrl}}/items
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+
+### -----------------------------------------------------------
+### 2. 新規アイテム作成（1つ目）
+### -----------------------------------------------------------
+POST {{baseUrl}}/items
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+
+{
+  "name": "ノートPC",
+  "description": "開発用のラップトップ"
+}
+
+### -----------------------------------------------------------
+### 3. 新規アイテム作成（2つ目）
+### -----------------------------------------------------------
+POST {{baseUrl}}/items
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+
+{
+  "name": "モニター",
+  "description": "27インチ 4K ディスプレイ"
+}
+
+### -----------------------------------------------------------
+### 4. 全アイテム一覧の取得（作成後）
+### -----------------------------------------------------------
+GET {{baseUrl}}/items
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+
+### -----------------------------------------------------------
+### 5. 個別アイテムの取得
+### -----------------------------------------------------------
+### ※ 手順2で返却された id に置き換えてください
+GET {{baseUrl}}/items/ここにIDを貼り付け
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+
+### -----------------------------------------------------------
+### 6. アイテムの更新
+### -----------------------------------------------------------
+### ※ 手順2で返却された id に置き換えてください
+PUT {{baseUrl}}/items/ここにIDを貼り付け
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+
+{
+  "name": "ノートPC（更新済み）",
+  "description": "開発用のラップトップ - メモリ32GB"
+}
+
+### -----------------------------------------------------------
+### 7. アイテムの削除
+### -----------------------------------------------------------
+### ※ 手順2で返却された id に置き換えてください
+DELETE {{baseUrl}}/items/ここにIDを貼り付け
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+
+### -----------------------------------------------------------
+### 8. 存在しないアイテムの取得（404 エラー確認）
+### -----------------------------------------------------------
+GET {{baseUrl}}/items/non-existent-id
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+
+### -----------------------------------------------------------
+### 9. 不正なリクエスト（400 エラー確認）
+### -----------------------------------------------------------
+POST {{baseUrl}}/items
+Content-Type: application/json
+X-API-Key: {{apiKey}}
+
+{
+  "description": "name フィールドがないので 400 エラーになる"
+}
+
+### -----------------------------------------------------------
+### 10. API キーなしアクセスの確認（401 または 403 を想定）
+### -----------------------------------------------------------
+GET {{baseUrl}}/items
+Content-Type: application/json
+
+### ============================================================================
+### Azure OpenAI API テスト（APIM に AOAI を追加した場合のみ）
+### ============================================================================
+
+@aoaiBaseUrl = https://<apim-service-name>.azure-api.net/aoai
+@aoaiApiKey = <apim-aoai-subscription-key>
+@aoaiDeployment = <azure-openai-deployment-name>
+@aoaiApiVersion = 2024-10-21
+
+### -----------------------------------------------------------
+### 11. Chat Completions
+### -----------------------------------------------------------
+POST {{aoaiBaseUrl}}/deployments/{{aoaiDeployment}}/chat/completions?api-version={{aoaiApiVersion}}
+Content-Type: application/json
+X-API-Key: {{aoaiApiKey}}
+
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a concise assistant."
+    },
+    {
+      "role": "user",
+      "content": "Say hello in Japanese."
+    }
+  ]
+}
+
+### -----------------------------------------------------------
+### 12. Embeddings
+### -----------------------------------------------------------
+POST {{aoaiBaseUrl}}/deployments/{{aoaiDeployment}}/embeddings?api-version={{aoaiApiVersion}}
+Content-Type: application/json
+X-API-Key: {{aoaiApiKey}}
+
+{
+  "input": "Azure OpenAI through APIM"
+}

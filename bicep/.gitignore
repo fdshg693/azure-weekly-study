@@ -1,0 +1,11 @@
+# ARM 生成物
+**/main.json
+
+# ローカル専用の Bicep パラメータ
+**/*.local.bicepparam
+
+# ローカルで API キーを書き込む REST Client 用ファイル
+**/*.local.http
+
+# scratch や検証用の JSON ダンプ
+**/_scratch*.json

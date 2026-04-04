@@ -1,0 +1,333 @@
+# Storage Accounts with Private Endpoint - Terraform構成
+
+このディレクトリには、Azure Storage AccountsをPrivate Endpoint経由でアクセスできるようにするTerraform構成が含まれています。
+
+## 📋 概要
+
+このTerraform構成は以下のリソースを作成します:
+
+1. **Storage Account** - Blobストレージを含むストレージアカウント
+2. **Virtual Network (VNet)** - プライベートエンドポイント用のネットワーク
+3. **Subnets** - プライベートエンドポイント用とVM用の2つのサブネット
+4. **Private Endpoint** - Storage AccountのBlobサービスへのプライベート接続
+5. **Private DNS Zone** - プライベートエンドポイントのDNS解決用
+6. **Test VM (Optional)** - プライベートエンドポイント経由でのアクセステスト用Linux VM
+7. **Blob Container & File** - サンプルファイルをアップロードしたコンテナ
+
+## 🏗️ アーキテクチャ
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Azure Subscription                        │
+│                                                              │
+│  ┌────────────────────────────────────────────────────┐    │
+│  │         Resource Group                              │    │
+│  │                                                     │    │
+│  │  ┌──────────────────────────────────────────┐     │    │
+│  │  │  Virtual Network (10.0.0.0/16)          │     │    │
+│  │  │                                          │     │    │
+│  │  │  ┌────────────────────────────────┐     │     │    │
+│  │  │  │ Private Endpoint Subnet        │     │     │    │
+│  │  │  │ (10.0.1.0/24)                  │     │     │    │
+│  │  │  │                                 │     │     │    │
+│  │  │  │  ┌──────────────────────┐      │     │     │    │
+│  │  │  │  │ Private Endpoint      │      │     │     │    │
+│  │  │  │  │ (10.0.1.x)            │──────┼─────┼─────┼────┼──┐
+│  │  │  │  └──────────────────────┘      │     │     │    │  │
+│  │  │  └────────────────────────────────┘     │     │    │  │
+│  │  │                                          │     │    │  │
+│  │  │  ┌────────────────────────────────┐     │     │    │  │
+│  │  │  │ VM Subnet (10.0.2.0/24)        │     │     │    │  │
+│  │  │  │                                 │     │     │    │  │
+│  │  │  │  ┌──────────────────────┐      │     │     │    │  │
+│  │  │  │  │ Test VM               │      │     │     │    │  │
+│  │  │  │  │ (10.0.2.x)            │      │     │     │    │  │
+│  │  │  │  └──────────────────────┘      │     │     │    │  │
+│  │  │  └────────────────────────────────┘     │     │    │  │
+│  │  │                                          │     │    │  │
+│  │  └──────────────────────────────────────────┘     │    │  │
+│  │                                                     │    │  │
+│  │  ┌──────────────────────────────────────────┐     │    │  │
+│  │  │ Private DNS Zone                          │     │    │  │
+│  │  │ privatelink.blob.core.windows.net        │     │    │  │
+│  │  └──────────────────────────────────────────┘     │    │  │
+│  │                                                     │    │  │
+│  └─────────────────────────────────────────────────────┘    │  │
+│                                                              │  │
+│  ┌───────────────────────────────────────────────────┐      │  │
+│  │  Storage Account                                   │      │  │
+│  │                                                    │      │  │
+│  │  ┌──────────────────┐                             │◄─────┘  │
+│  │  │ Blob Service     │  Public Access: Disabled    │         │
+│  │  │                  │  Private Endpoint: Enabled  │         │
+│  │  └──────────────────┘                             │         │
+│  └───────────────────────────────────────────────────┘         │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+```
+
+## 📁 ファイル構成
+
+```
+storage_accounts_private_endpoint/
+├── provider.tf          # Terraformとプロバイダーの設定
+├── variables.tf         # 変数定義（カスタマイズ可能な値）
+├── main.tf              # メインリソース定義（VNet、Storage、Private Endpoint等）
+├── vm.tf                # テスト用VM定義（オプション）
+├── outputs.tf           # 出力値定義（デプロイ後の情報表示）
+├── sample.txt           # アップロード用サンプルファイル
+└── README.md            # このファイル
+```
+
+## 🚀 使用方法
+
+### 前提条件
+
+1. **Azure CLI**がインストールされている
+   ```powershell
+   az --version
+   ```
+
+2. **Terraform**がインストールされている（v1.0以上推奨）
+   ```powershell
+   terraform --version
+   ```
+
+3. **Azureにログイン**している
+   ```powershell
+   az login
+   az account show
+   ```
+
+### デプロイ手順
+
+1. **ディレクトリに移動**
+   ```powershell
+   cd c:\CodeStudy\azure_study\terraform\storage_accounts_private_endpoint
+   ```
+
+2. **変数のカスタマイズ（オプション）**
+   
+   `variables.tf`を編集して、以下の値を必要に応じて変更:
+   - `storage_account_name`: Storage Account名（グローバルで一意である必要があります）
+   - `admin_password`: VM管理者パスワード（必ず変更してください）
+   - `location`: デプロイ先のリージョン
+
+   または、`terraform.tfvars`ファイルを作成:
+   ```hcl
+   storage_account_name = "mystorageacct12345"
+   admin_password       = "YourSecurePassword123!"
+   location             = "Japan East"
+   ```
+
+3. **Terraformの初期化**
+   ```powershell
+   terraform init
+   ```
+
+4. **実行プランの確認**
+   ```powershell
+   terraform plan
+   ```
+   
+   作成されるリソースを確認してください。
+
+5. **リソースのデプロイ**
+   ```powershell
+   terraform apply
+   ```
+   
+   `yes`を入力して実行を確認します。
+   
+   デプロイには5-10分程度かかります。
+
+6. **出力情報の確認**
+   ```powershell
+   # すべての出力を表示
+   terraform output
+   
+   # 特定の出力を表示
+   terraform output vm_public_ip
+   terraform output ssh_command
+   ```
+
+## 🧪 動作確認
+
+### 1. VMへのSSH接続
+
+```powershell
+# SSH接続コマンドを取得
+terraform output -raw ssh_command
+
+# 出力されたコマンドを実行（例）
+ssh azureuser@<VMのパブリックIP>
+```
+
+### 2. プライベートエンドポイント経由でのアクセステスト
+
+VMに接続後、以下を実行:
+
+```bash
+# DNS解決の確認（プライベートIPアドレスに解決されることを確認）
+nslookup <storage_account_name>.blob.core.windows.net
+
+# プライベートIPアドレスは 10.0.1.x の範囲であるべき
+
+# HTTPSでのアクセステスト
+curl -I https://<storage_account_name>.blob.core.windows.net/
+
+# テストスクリプトの実行
+./test_storage.sh
+```
+
+### 3. Azure CLIを使用したファイルアップロード
+
+VMから実行:
+
+```bash
+# Azureにログイン
+az login
+
+# ファイルのアップロード
+az storage blob upload \
+  --account-name <storage_account_name> \
+  --container-name private-container \
+  --name test-from-vm.txt \
+  --file /etc/hostname \
+  --auth-mode login
+
+# アップロードされたファイルの確認
+az storage blob list \
+  --account-name <storage_account_name> \
+  --container-name private-container \
+  --auth-mode login \
+  --output table
+```
+
+### 4. インターネットからのアクセステスト（失敗することを確認）
+
+ローカル環境から実行（プライベートエンドポイント経由でアクセスできない環境）:
+
+```powershell
+# これは失敗するはず（public_network_access_enabled = false のため）
+curl https://<storage_account_name>.blob.core.windows.net/
+```
+
+## 🔒 セキュリティのベストプラクティス
+
+1. **VM管理者パスワードの変更**
+   - デフォルトパスワードは必ず変更してください
+   - 本番環境ではSSH公開鍵認証を使用してください
+
+2. **NSGルールの制限**
+   - SSHアクセスを特定のIPアドレスに制限してください
+   - 本番環境では、Azure Bastion の使用を推奨
+
+3. **Storage Accountアクセスキーの管理**
+   - アクセスキーは安全に保管してください
+   - 可能な限り Azure AD 認証を使用してください
+   - 定期的にキーをローテーションしてください
+
+4. **タグの活用**
+   - コスト管理と整理のため、適切なタグを設定してください
+
+## 💰 コスト見積もり（概算、Japan Eastリージョン）
+
+| リソース | 月額コスト（概算） |
+|---------|-------------------|
+| Storage Account (LRS, 10GB) | ¥200-300 |
+| Private Endpoint | ¥800-1,000 |
+| Private DNS Zone | ¥60-80 |
+| VM (Standard_B1s) | ¥1,200-1,500 |
+| Public IP (Static) | ¥400-500 |
+| **合計** | **約 ¥2,660-3,380** |
+
+※実際のコストは使用量や為替レートによって変動します
+
+### コスト削減のヒント
+
+- テスト後は不要なVMを削除する
+- Standard_B1s VMの使用時間を最小限にする
+- 不要な場合は `vm.tf` をコメントアウトしてVMを作成しない
+
+## 🗑️ リソースの削除
+
+すべてのリソースを削除するには:
+
+```powershell
+terraform destroy
+```
+
+`yes`を入力して削除を確認します。
+
+※完全に削除されるまで数分かかる場合があります。
+
+## 📚 追加のカスタマイズオプション
+
+### VMを作成しない場合
+
+コストを削減したい、またはVMが不要な場合:
+
+1. `vm.tf` ファイルの名前を変更:
+   ```powershell
+   Rename-Item vm.tf vm.tf.disabled
+   ```
+
+2. または、ファイル全体をコメントアウト
+
+### 他のストレージサービスのプライベートエンドポイント追加
+
+`main.tf` の末尾にあるコメントアウトされたコードを参考に、File、Queue、Table、Dfsサービス用のプライベートエンドポイントを追加できます。
+
+### 複数のコンテナの作成
+
+`main.tf` に追加のコンテナリソースを定義:
+
+```hcl
+resource "azurerm_storage_container" "additional" {
+  name                  = "another-container"
+  storage_account_name  = azurerm_storage_account.main.name
+  container_access_type = "private"
+}
+```
+
+## 📖 使用可能なオプションの詳細
+
+### Storage Account のオプション
+
+| オプション | 説明 | 値の例 |
+|-----------|------|--------|
+| `account_tier` | パフォーマンスティア | `Standard`, `Premium` |
+| `account_replication_type` | レプリケーション戦略 | `LRS`, `GRS`, `RAGRS`, `ZRS`, `GZRS`, `RAGZRS` |
+| `account_kind` | アカウントの種類 | `StorageV2`, `BlobStorage`, `FileStorage`, `BlockBlobStorage` |
+| `access_tier` | アクセス頻度 | `Hot`, `Cool` |
+| `min_tls_version` | 最小TLSバージョン | `TLS1_0`, `TLS1_1`, `TLS1_2` |
+| `public_network_access_enabled` | パブリックアクセス | `true`, `false` |
+| `allow_nested_items_to_be_public` | Blob公開アクセス許可 | `true`, `false` |
+| `shared_access_key_enabled` | アクセスキー使用許可 | `true`, `false` |
+
+### Blob のオプション
+
+| オプション | 説明 | 値の例 |
+|-----------|------|--------|
+| `type` | Blobタイプ | `Block`, `Page`, `Append` |
+| `access_tier` | アクセス階層 | `Hot`, `Cool`, `Archive` |
+| `content_type` | MIMEタイプ | `text/plain`, `application/json`, `image/png` |
+| `content_encoding` | エンコーディング | `gzip`, `deflate` |
+| `cache_control` | キャッシュ制御 | `max-age=3600` |
+
+### Private Endpoint のオプション
+
+| オプション | 説明 | 値の例 |
+|-----------|------|--------|
+| `subresource_names` | 接続するサービス | `blob`, `file`, `queue`, `table`, `dfs`, `web` |
+| `is_manual_connection` | 手動承認 | `true`, `false` |
+
+### VM サイズのオプション
+
+| サイズ | vCPU | メモリ | 用途 |
+|--------|------|--------|------|
+| `Standard_B1s` | 1 | 1 GB | 開発/テスト（最小構成） |
+| `Standard_B2s` | 2 | 4 GB | 小規模ワークロード |
+| `Standard_D2s_v3` | 2 | 8 GB | 汎用ワークロード |
+| `Standard_D4s_v3` | 4 | 16 GB | 中規模ワークロード |

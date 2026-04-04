@@ -1,0 +1,31 @@
+// ============================================================================
+// ローカル専用の上書きパラメータ例
+// ============================================================================
+// このファイルを main.local.bicepparam にコピーして利用してください。
+// main.local.bicepparam は .gitignore で除外されます。
+// 機密値や個人用設定、実運用向けの連絡先はこのローカルファイルへ分離します。
+
+using './main.bicep'
+
+param prefix = 'apimlearnlocal'
+
+// APIM を削除してすぐ再作成すると soft-delete で同名がブロックされることがあります
+// その場合は just apim-purge で古い APIM を purge するか、suffix を変えて別名で作成してください
+// param suffix = 'local001'
+
+param apimPublisherName = 'Your Team Name'
+param apimPublisherEmail = 'your-team@example.com'
+
+// 既存の Azure OpenAI を APIM に追加したい場合だけ有効化してください
+// param enableAzureOpenAiApi = true
+// param azureOpenAiEndpoint = 'https://your-aoai-resource.openai.azure.com'
+// param azureOpenAiApiKey = '<set-only-in-local-file>'
+
+// 固定の内部シークレットを使いたい場合のみ設定してください
+// param backendSharedSecret = '<set-only-in-local-file>'
+
+param tags = {
+  Environment: 'Local'
+  Project: 'BicepFunctionsCRUD'
+  ManagedBy: 'Bicep'
+}

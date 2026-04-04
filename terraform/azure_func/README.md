@@ -1,0 +1,1 @@
+`C:\CodeRoot\Azure\azure_func` 配下のPythonコードをAzure FunctionsとしてデプロイするためのTerraformコード。

@@ -1,0 +1,56 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+default:
+  @just --list
+
+# Create the resource group used by the sample.
+group-create resource_group="rg-func-crud-dev" location="japaneast":
+  @az group create --name {{resource_group}} --location {{location}}
+
+# Create a local parameter file from the checked-in example.
+init-local-param:
+  @if (Test-Path main.local.bicepparam) { Write-Host 'main.local.bicepparam already exists.' } else { Copy-Item main.local.bicepparam.example main.local.bicepparam; Write-Host 'Created main.local.bicepparam from example.' }
+
+# Deploy the template with the specified parameter file.
+deploy resource_group="rg-func-crud-dev" param_file="main.bicepparam":
+  @az deployment group create --resource-group {{resource_group}} --template-file main.bicep --parameters {{param_file}}
+
+# Deploy with the local parameter file.
+deploy-local resource_group="rg-func-crud-dev":
+  @just deploy {{resource_group}} main.local.bicepparam
+
+# Deploy infrastructure without publishing function code.
+deploy-no-code resource_group="rg-func-crud-dev" param_file="main.bicepparam":
+  @az deployment group create --resource-group {{resource_group}} --template-file main.bicep --parameters {{param_file}} publishFunctionCode=false
+
+# Show the main output values from the deployment.
+outputs resource_group="rg-func-crud-dev" deployment_name="main":
+  @$deployment = az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} | ConvertFrom-Json; [pscustomobject]@{ functionAppName = $deployment.properties.outputs.functionAppName.value; functionAppUrl = $deployment.properties.outputs.functionAppUrl.value; backendApiBaseUrl = $deployment.properties.outputs.backendApiBaseUrl.value; apimServiceName = $deployment.properties.outputs.apimServiceName.value; apiBaseUrl = $deployment.properties.outputs.apiBaseUrl.value; azureOpenAiApiBaseUrl = if ($deployment.properties.outputs.azureOpenAiApiBaseUrl) { $deployment.properties.outputs.azureOpenAiApiBaseUrl.value } else { $null }; storageAccountName = $deployment.properties.outputs.storageAccountName.value } | ConvertTo-Json -Depth 5
+
+# List APIM services that remain in soft-deleted state.
+apim-deleted-list:
+  @az apim deletedservice list --output table
+
+# Show a specific APIM service in soft-deleted state.
+apim-deleted-show service_name location="japaneast":
+  @az apim deletedservice show --service-name {{service_name}} --location {{location}}
+
+# Purge a soft-deleted APIM service so the same name can be reused.
+apim-purge service_name location="japaneast":
+  @az apim deletedservice purge --service-name {{service_name}} --location {{location}}
+
+# Fetch an APIM subscription key from the deployment outputs.
+api-key resource_group="rg-func-crud-dev" deployment_name="main" subscription_name="crud-default-subscription":
+  @$deployment = az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} | ConvertFrom-Json; $apimServiceName = $deployment.properties.outputs.apimServiceName.value; $subscriptionId = az account show --query id -o tsv; $resourceManager = (az cloud show --query endpoints.resourceManager -o tsv).TrimEnd('/'); az rest --method post --uri "$resourceManager/subscriptions/$subscriptionId/resourceGroups/{{resource_group}}/providers/Microsoft.ApiManagement/service/$apimServiceName/subscriptions/{{subscription_name}}/listSecrets?api-version=2024-05-01" --query primaryKey -o tsv
+
+# Fetch the APIM subscription key used for the optional Azure OpenAI proxy API.
+aoai-api-key resource_group="rg-func-crud-dev" deployment_name="main":
+  @just api-key {{resource_group}} {{deployment_name}} azure-openai-default-subscription
+
+# Install local Python dependencies for the Function app.
+local-install:
+  @Push-Location python; try { pip install -r requirements.txt } finally { Pop-Location }
+
+# Start the Function app locally.
+local-start:
+  @Push-Location python; try { func start } finally { Pop-Location }
