@@ -55,21 +55,39 @@ param publishFunctionCode bool = true
 @description('APIM と Function App 間で共有するバックエンド認証シークレット。未指定時はデプロイ時に自動生成されます')
 param backendSharedSecret string = newGuid()
 
-@description('既存の Azure OpenAI を APIM 配下の別 API として公開するか')
+@description('Azure OpenAI を新規作成し、APIM 配下の別 API として公開するか')
 param enableAzureOpenAiApi bool = false
 
-@description('既存 Azure OpenAI リソースのエンドポイント。末尾の / は付けずに指定してください。例: https://example.openai.azure.com')
-param azureOpenAiEndpoint string = ''
+@description('Azure OpenAI をデプロイするリージョン。モデル可用性に応じて変更してください')
+param azureOpenAiLocation string = location
 
-@secure()
-@description('既存 Azure OpenAI リソースの API キー')
-param azureOpenAiApiKey string = ''
+@description('Azure OpenAI モデルデプロイ名')
+param azureOpenAiDeploymentName string = 'gpt-4o-mini'
+
+@description('Azure OpenAI にデプロイするモデル名')
+param azureOpenAiModelName string = 'gpt-4o-mini'
+
+@description('Azure OpenAI モデルバージョン。空文字の場合は Azure の既定バージョンを利用します')
+param azureOpenAiModelVersion string = ''
+
+@description('Azure OpenAI モデルデプロイの SKU')
+@allowed(['Standard', 'GlobalStandard', 'GlobalBatch'])
+param azureOpenAiDeploymentSkuName string = 'Standard'
+
+@description('Azure OpenAI モデルデプロイの容量。利用可能な値はモデルと SKU に依存します')
+@minValue(1)
+param azureOpenAiDeploymentCapacity int = 10
+
+@description('Azure OpenAI モデルの自動アップグレード方針')
+@allowed(['NoAutoUpgrade', 'OnceCurrentVersionExpired', 'OnceNewDefaultVersionAvailable'])
+param azureOpenAiVersionUpgradeOption string = 'OnceNewDefaultVersionAvailable'
 
 // ============================================================================
 // 名前とコード定義
 // ============================================================================
 var functionAppName = 'func-${prefix}-${suffix}'
 var apimServiceName = 'apim-${prefix}-${take(suffix, 8)}'
+var azureOpenAiAccountName = 'aoai-${prefix}-${take(suffix, 8)}'
 var functionAppSource = loadTextContent('python/function_app.py')
 var hostJsonContent = loadTextContent('python/host.json')
 var requirementsTxtContent = loadTextContent('python/requirements.txt')
@@ -100,6 +118,26 @@ module functionApp './modules/function-app.bicep' = {
   }
 }
 
+module azureOpenAi './modules/azure-openai.bicep' = {
+  name: 'azureOpenAiResources'
+  params: {
+    location: azureOpenAiLocation
+    azureOpenAiAccountName: azureOpenAiAccountName
+    enableAzureOpenAiApi: enableAzureOpenAiApi
+    azureOpenAiDeploymentName: azureOpenAiDeploymentName
+    azureOpenAiModelName: azureOpenAiModelName
+    azureOpenAiModelVersion: azureOpenAiModelVersion
+    azureOpenAiDeploymentSkuName: azureOpenAiDeploymentSkuName
+    azureOpenAiDeploymentCapacity: azureOpenAiDeploymentCapacity
+    azureOpenAiVersionUpgradeOption: azureOpenAiVersionUpgradeOption
+    tags: tags
+  }
+}
+
+resource azureOpenAiAccount 'Microsoft.CognitiveServices/accounts@2025-12-01' existing = if (enableAzureOpenAiApi) {
+  name: azureOpenAiAccountName
+}
+
 module apim './modules/apim.bicep' = {
   name: 'apiManagementResources'
   params: {
@@ -112,8 +150,8 @@ module apim './modules/apim.bicep' = {
     tags: tags
     backendSharedSecret: backendSharedSecret
     enableAzureOpenAiApi: enableAzureOpenAiApi
-    azureOpenAiEndpoint: azureOpenAiEndpoint
-    azureOpenAiApiKey: azureOpenAiApiKey
+    azureOpenAiEndpoint: azureOpenAi.outputs.azureOpenAiEndpoint
+    azureOpenAiApiKey: enableAzureOpenAiApi ? listKeys(azureOpenAiAccount.id, '2025-12-01').key1 : ''
   }
 }
 
@@ -154,6 +192,15 @@ output apiBaseUrl string = apim.outputs.apiBaseUrl
 
 @description('利用者向け Azure OpenAI API のベース URL。未有効時は空文字')
 output azureOpenAiApiBaseUrl string = apim.outputs.azureOpenAiApiBaseUrl
+
+@description('Azure OpenAI リソース名。未有効時は空文字')
+output azureOpenAiAccountName string = azureOpenAi.outputs.azureOpenAiAccountName
+
+@description('Azure OpenAI リソースのエンドポイント。未有効時は空文字')
+output azureOpenAiEndpoint string = azureOpenAi.outputs.azureOpenAiEndpoint
+
+@description('Azure OpenAI モデルデプロイ名。未有効時は空文字')
+output azureOpenAiDeploymentName string = azureOpenAi.outputs.azureOpenAiDeploymentName
 
 @description('利用者が送る API キーのヘッダー名')
 output apiKeyHeaderName string = apim.outputs.apiKeyHeaderName

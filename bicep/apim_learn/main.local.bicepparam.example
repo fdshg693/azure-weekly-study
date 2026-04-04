@@ -16,10 +16,14 @@ param prefix = 'apimlearnlocal'
 param apimPublisherName = 'Your Team Name'
 param apimPublisherEmail = 'your-team@example.com'
 
-// 既存の Azure OpenAI を APIM に追加したい場合だけ有効化してください
+// Azure OpenAI リソースとモデルデプロイをこのテンプレートで作成したい場合だけ有効化してください
 // param enableAzureOpenAiApi = true
-// param azureOpenAiEndpoint = 'https://your-aoai-resource.openai.azure.com'
-// param azureOpenAiApiKey = '<set-only-in-local-file>'
+// param azureOpenAiLocation = 'japaneast'
+// param azureOpenAiDeploymentName = 'gpt-4o-mini'
+// param azureOpenAiModelName = 'gpt-4o-mini'
+// param azureOpenAiModelVersion = ''
+// param azureOpenAiDeploymentSkuName = 'Standard'
+// param azureOpenAiDeploymentCapacity = 10
 
 // 固定の内部シークレットを使いたい場合のみ設定してください
 // param backendSharedSecret = '<set-only-in-local-file>'

@@ -4,12 +4,14 @@
 
 ## 0. Azure OpenAI について先に確認
 
-このテンプレートは Azure OpenAI リソース自体を新規作成しません。
+`enableAzureOpenAiApi = true` を指定すると、Azure OpenAI リソース本体と 1 つのモデルデプロイもこのテンプレートで新規作成します。
 
-`enableAzureOpenAiApi = true` を指定した場合に追加されるのは、既存の Azure OpenAI エンドポイントを APIM 配下の `/aoai` API として公開するための APIM 設定だけです。
+あわせて、その Azure OpenAI を APIM 配下の `/aoai` API として公開するための APIM 設定も追加します。
 
-そのため、デプロイ成功後に `rg-func-crud-dev` 配下を見ても、`Microsoft.CognitiveServices/accounts` のような AOAI リソースは増えません。増えるのは主に以下です。
+そのため、デプロイ成功後に `rg-func-crud-dev` 配下には `Microsoft.CognitiveServices/accounts` の AOAI リソースも増えます。増えるのは主に以下です。
 
+- Azure OpenAI リソース
+- Azure OpenAI モデルデプロイ
 - APIM サービス
 - APIM の `azure-openai-api`
 - APIM の Product / Subscription
@@ -57,10 +59,17 @@ just init-local-param
 - `servicePlanSku`
 - `apimSkuName`
 - `enableAzureOpenAiApi`
-- `azureOpenAiEndpoint` と `azureOpenAiApiKey`（既存 AOAI を APIM に追加する場合のみ）
+- `azureOpenAiLocation`（既定ではメインの `location` と同じ）
+- `azureOpenAiDeploymentName`
+- `azureOpenAiModelName`
+- `azureOpenAiModelVersion`（空文字なら Azure の既定バージョン）
+- `azureOpenAiDeploymentSkuName`
+- `azureOpenAiDeploymentCapacity`
 - `apimPublisherName`
 - `apimPublisherEmail`
 - `tags`
+
+Azure OpenAI はモデルごとにリージョン可用性が異なります。`enableAzureOpenAiApi = true` にする場合は、`azureOpenAiLocation` と `azureOpenAiModelName` の組み合わせが利用可能かを事前に確認してください。
 
 ## 3. デプロイ
 
@@ -139,6 +148,9 @@ az deployment group create --resource-group rg-func-crud-dev --template-file mai
 - `apimGatewayUrl`
 - `apiBaseUrl`
 - `azureOpenAiApiBaseUrl`（有効時のみ）
+- `azureOpenAiAccountName`（有効時のみ）
+- `azureOpenAiEndpoint`（有効時のみ）
+- `azureOpenAiDeploymentName`（有効時のみ）
 - `apiKeyHeaderName`
 - `apiKeyCommand`
 - `azureOpenAiApiKeyCommand`（有効時のみ）
@@ -171,6 +183,7 @@ $deployment = az deployment group show --resource-group $resourceGroupName --nam
 $apimServiceName = $deployment.properties.outputs.apimServiceName.value
 $apiBaseUrl = $deployment.properties.outputs.apiBaseUrl.value
 $azureOpenAiApiBaseUrl = $deployment.properties.outputs.azureOpenAiApiBaseUrl.value
+$azureOpenAiDeploymentName = $deployment.properties.outputs.azureOpenAiDeploymentName.value
 ```
 
 ### 5-2. API キーを取得する
@@ -222,7 +235,7 @@ $resourceManager = (az cloud show --query endpoints.resourceManager -o tsv).Trim
 $apiKey = az rest --method post --uri "$resourceManager/subscriptions/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.ApiManagement/service/$apimServiceName/subscriptions/crud-default-subscription/listSecrets?api-version=2024-05-01" --query primaryKey -o tsv
 ```
 
-### 5-3. 疎通確認を行うecho 
+### 5-3. 疎通確認を行うecho
 
 ```powershell
 Invoke-RestMethod -Method GET -Uri "$apiBaseUrl/items" -Headers @{
@@ -257,7 +270,7 @@ Invoke-RestMethod -Method POST -Uri "$apiBaseUrl/items" -ContentType 'applicatio
 - Function App 直下の URL は内部ヘッダー検証で保護されています
 - APIM の API キーは `X-API-Key` ヘッダーで送ります
 - Azure OpenAI を有効化すると、`/aoai` 配下に別 API と別 Subscription が追加されます
-- Azure OpenAI リソース本体はこの Bicep では作成されません
+- Azure OpenAI を有効化すると、AOAI リソース本体とモデルデプロイも同時に作成されます
 
 ## 9. よくある失敗
 

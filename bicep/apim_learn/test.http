@@ -111,7 +111,7 @@ Content-Type: application/json
 
 @aoaiBaseUrl = https://<apim-service-name>.azure-api.net/aoai
 @aoaiApiKey = <apim-aoai-subscription-key>
-@aoaiDeployment = <azure-openai-deployment-name>
+@aoaiDeployment = <azure-openai-deployment-name-from-output>
 @aoaiApiVersion = 2024-10-21
 
 ### -----------------------------------------------------------

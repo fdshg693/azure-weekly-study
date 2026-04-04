@@ -23,14 +23,14 @@ param tags object
 @description('APIM から Function App へ送るバックエンド認証シークレット')
 param backendSharedSecret string
 
-@description('既存の Azure OpenAI を APIM 配下の別 API として公開するか')
+@description('Azure OpenAI バックエンドを APIM 配下の別 API として公開するか')
 param enableAzureOpenAiApi bool = false
 
-@description('既存 Azure OpenAI リソースのエンドポイント。末尾の / は付けずに指定してください。例: https://example.openai.azure.com')
+@description('Azure OpenAI リソースのエンドポイント。末尾の / は付けずに指定してください。例: https://example.openai.azure.com')
 param azureOpenAiEndpoint string = ''
 
 @secure()
-@description('既存 Azure OpenAI リソースの API キー')
+@description('Azure OpenAI リソースの API キー')
 param azureOpenAiApiKey string = ''
 
 param apimApiName string = 'crud-api'

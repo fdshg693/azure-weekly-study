@@ -25,7 +25,7 @@ param servicePlanSku = 'Y1'
 // API Management の SKU
 param apimSkuName = 'Developer'
 
-// Azure OpenAI を APIM に追加する場合だけ true
+// Azure OpenAI リソースとモデルデプロイをあわせて作成し、APIM に追加する場合だけ true
 param enableAzureOpenAiApi = false
 
 // API Management の公開者情報
