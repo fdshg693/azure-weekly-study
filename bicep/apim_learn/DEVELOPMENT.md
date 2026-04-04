@@ -57,6 +57,18 @@ APIM 側では AOAI 用の別 Product / Subscription を作り、バックエン
 
 モデルの利用可否はリージョンと SKU に依存します。`enableAzureOpenAiApi = true` にする場合は、対象リージョンでそのモデルがデプロイ可能かを確認してください。
 
+## MCP Server 向けの APIM operation 定義
+
+APIM の組み込み機能で REST API を MCP Server としてエクスポートする場合、APIM に登録された operation の名前、説明、パラメータ、リクエスト例が MCP ツールの見え方に影響します。
+
+このサンプルでは `modules/apim-crud-api.bicep` に以下を明示的に入れています。
+
+- `POST /items` と `PUT /items/{id}` の JSON リクエスト例
+- `GET` / `PUT` / `DELETE` の `id` パラメータ説明
+- 各操作のレスポンス説明と代表例
+
+MCP エージェントから使いやすいツールにしたい場合は、Function 実装だけでなく APIM operation 定義もあわせて更新してください。手順自体は `MCP.md` にまとめています。
+
 ## Git に入れないもの
 
 以下は Git 管理対象外です。

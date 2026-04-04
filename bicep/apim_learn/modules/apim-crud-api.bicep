@@ -22,34 +22,141 @@ param backendSecretNamedValueName string = 'function-backend-secret'
 var crudApiServiceUrl = 'https://${functionDefaultHostName}/api'
 
 // Function App の CRUD エンドポイントを APIM の操作として公開する。
+// APIM の MCP export は操作名、説明、パラメータ、リクエスト例をツール情報として利用するため、
+// REST API 利用者向けだけでなく LLM エージェント向けにも分かりやすい定義を入れておく。
 var crudOperations = [
   {
     name: 'list-items'
     displayName: 'List items'
     method: 'GET'
     urlTemplate: '/items'
-    description: 'Get all items.'
+    description: 'List all items currently stored in the sample application.'
     templateParameters: []
+    request: {
+      description: 'No request body is required.'
+      headers: []
+      queryParameters: []
+      representations: []
+    }
+    responses: [
+      {
+        statusCode: 200
+        description: 'Returns an array of items.'
+        representations: [
+          {
+            contentType: 'application/json'
+            examples: {
+              sample: {
+                summary: 'List items response'
+                value: [
+                  {
+                    id: '11111111-1111-1111-1111-111111111111'
+                    name: 'Notebook PC'
+                    description: 'Development laptop'
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
   }
   {
     name: 'create-item'
     displayName: 'Create item'
     method: 'POST'
     urlTemplate: '/items'
-    description: 'Create a new item.'
+    description: 'Create a new item. The request body must include name and can include description.'
     templateParameters: []
+    request: {
+      description: 'JSON body for the item to create.'
+      headers: []
+      queryParameters: []
+      representations: [
+        {
+          contentType: 'application/json'
+          examples: {
+            sample: {
+              summary: 'Create item request'
+              value: {
+                name: 'Notebook PC'
+                description: 'Development laptop'
+              }
+            }
+          }
+        }
+      ]
+    }
+    responses: [
+      {
+        statusCode: 201
+        description: 'Returns the created item including its generated id.'
+        representations: [
+          {
+            contentType: 'application/json'
+            examples: {
+              sample: {
+                summary: 'Create item response'
+                value: {
+                  id: '11111111-1111-1111-1111-111111111111'
+                  name: 'Notebook PC'
+                  description: 'Development laptop'
+                }
+              }
+            }
+          }
+        ]
+      }
+      {
+        statusCode: 400
+        description: 'Returned when the request body is not valid JSON or name is missing.'
+      }
+    ]
   }
   {
     name: 'get-item'
     displayName: 'Get item'
     method: 'GET'
     urlTemplate: '/items/{id}'
-    description: 'Get a single item.'
+    description: 'Get a single item by id.'
     templateParameters: [
       {
         name: 'id'
         type: 'string'
         required: true
+        description: 'The item id to retrieve.'
+      }
+    ]
+    request: {
+      description: 'No request body is required.'
+      headers: []
+      queryParameters: []
+      representations: []
+    }
+    responses: [
+      {
+        statusCode: 200
+        description: 'Returns the requested item.'
+        representations: [
+          {
+            contentType: 'application/json'
+            examples: {
+              sample: {
+                summary: 'Get item response'
+                value: {
+                  id: '11111111-1111-1111-1111-111111111111'
+                  name: 'Notebook PC'
+                  description: 'Development laptop'
+                }
+              }
+            }
+          }
+        ]
+      }
+      {
+        statusCode: 404
+        description: 'Returned when the item does not exist.'
       }
     ]
   }
@@ -58,12 +165,61 @@ var crudOperations = [
     displayName: 'Update item'
     method: 'PUT'
     urlTemplate: '/items/{id}'
-    description: 'Update a single item.'
+    description: 'Update an existing item by id. Provide one or both of name and description in the JSON body.'
     templateParameters: [
       {
         name: 'id'
         type: 'string'
         required: true
+        description: 'The item id to update.'
+      }
+    ]
+    request: {
+      description: 'JSON body with fields to update.'
+      headers: []
+      queryParameters: []
+      representations: [
+        {
+          contentType: 'application/json'
+          examples: {
+            sample: {
+              summary: 'Update item request'
+              value: {
+                name: 'Notebook PC 14'
+                description: 'Updated development laptop'
+              }
+            }
+          }
+        }
+      ]
+    }
+    responses: [
+      {
+        statusCode: 200
+        description: 'Returns the updated item.'
+        representations: [
+          {
+            contentType: 'application/json'
+            examples: {
+              sample: {
+                summary: 'Update item response'
+                value: {
+                  id: '11111111-1111-1111-1111-111111111111'
+                  name: 'Notebook PC 14'
+                  description: 'Updated development laptop'
+                }
+              }
+            }
+          }
+        ]
+      }
+      {
+        statusCode: 400
+        description: 'Returned when the request body is not valid JSON.'
+      }
+      {
+        statusCode: 404
+        description: 'Returned when the item does not exist.'
       }
     ]
   }
@@ -72,12 +228,44 @@ var crudOperations = [
     displayName: 'Delete item'
     method: 'DELETE'
     urlTemplate: '/items/{id}'
-    description: 'Delete a single item.'
+    description: 'Delete a single item by id.'
     templateParameters: [
       {
         name: 'id'
         type: 'string'
         required: true
+        description: 'The item id to delete.'
+      }
+    ]
+    request: {
+      description: 'No request body is required.'
+      headers: []
+      queryParameters: []
+      representations: []
+    }
+    responses: [
+      {
+        statusCode: 200
+        description: 'Returns the deleted item.'
+        representations: [
+          {
+            contentType: 'application/json'
+            examples: {
+              sample: {
+                summary: 'Delete item response'
+                value: {
+                  id: '11111111-1111-1111-1111-111111111111'
+                  name: 'Notebook PC'
+                  description: 'Development laptop'
+                }
+              }
+            }
+          }
+        ]
+      }
+      {
+        statusCode: 404
+        description: 'Returned when the item does not exist.'
       }
     ]
   }
@@ -119,8 +307,9 @@ resource crudOperationsResource 'Microsoft.ApiManagement/service/apis/operations
     method: operation.method
     urlTemplate: operation.urlTemplate
     description: operation.description
+    request: operation.request
     templateParameters: operation.templateParameters
-    responses: []
+    responses: operation.responses
   }
 }]
 

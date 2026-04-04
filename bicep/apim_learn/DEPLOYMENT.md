@@ -165,6 +165,8 @@ az deployment group create --resource-group rg-func-crud-dev --template-file mai
 
 重要なのは、`resourceGroupName` には APIM をデプロイしたリソースグループ名を入れること、`apimServiceName` は先にデプロイ出力から取得しておくことです。
 
+既存の CRUD API を APIM の組み込み機能で MCP Server として公開する場合も、まずここで取得する APIM サブスクリプションキーを使います。MCP 化の具体的な手順は `MCP.md` を参照してください。
+
 ### 5-1. デプロイ出力を読む
 
 `justfile` を使う場合:
