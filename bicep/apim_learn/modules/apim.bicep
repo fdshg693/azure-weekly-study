@@ -33,110 +33,40 @@ param azureOpenAiEndpoint string = ''
 @description('Azure OpenAI リソースの API キー')
 param azureOpenAiApiKey string = ''
 
-param apimApiName string = 'crud-api'
-param apimApiPath string = 'crud'
-param apimProductName string = 'crud-product'
-param apimSubscriptionName string = 'crud-default-subscription'
+@description('CRUD API 名')
+param crudApiName string = 'crud-api'
+
+@description('CRUD API の公開パス')
+param crudApiPath string = 'crud'
+
+@description('CRUD API を束ねる Product 名')
+param crudProductName string = 'crud-product'
+
+@description('CRUD API 用の既定 Subscription 名')
+param crudSubscriptionName string = 'crud-default-subscription'
+
+@description('CRUD バックエンド認証シークレットを保持する named value 名')
 param apimBackendSecretNamedValueName string = 'function-backend-secret'
+
+@description('Azure OpenAI API 名')
 param azureOpenAiApiName string = 'azure-openai-api'
+
+@description('Azure OpenAI API の公開パス')
 param azureOpenAiApiPath string = 'aoai'
+
+@description('Azure OpenAI API を束ねる Product 名')
 param azureOpenAiProductName string = 'azure-openai-product'
+
+@description('Azure OpenAI API 用の既定 Subscription 名')
 param azureOpenAiSubscriptionName string = 'azure-openai-default-subscription'
+
+@description('AOAI バックエンド API キーを保持する named value 名')
 param azureOpenAiApiKeyNamedValueName string = 'azure-openai-api-key'
 
 var apimSkuCapacity = apimSkuName == 'Developer' ? 0 : 1
-var azureOpenAiServiceUrl = empty(azureOpenAiEndpoint) ? '' : '${azureOpenAiEndpoint}/openai'
-var apimOperations = [
-  {
-    name: 'list-items'
-    displayName: 'List items'
-    method: 'GET'
-    urlTemplate: '/items'
-    description: 'Get all items.'
-    templateParameters: []
-  }
-  {
-    name: 'create-item'
-    displayName: 'Create item'
-    method: 'POST'
-    urlTemplate: '/items'
-    description: 'Create a new item.'
-    templateParameters: []
-  }
-  {
-    name: 'get-item'
-    displayName: 'Get item'
-    method: 'GET'
-    urlTemplate: '/items/{id}'
-    description: 'Get a single item.'
-    templateParameters: [
-      {
-        name: 'id'
-        type: 'string'
-        required: true
-      }
-    ]
-  }
-  {
-    name: 'update-item'
-    displayName: 'Update item'
-    method: 'PUT'
-    urlTemplate: '/items/{id}'
-    description: 'Update a single item.'
-    templateParameters: [
-      {
-        name: 'id'
-        type: 'string'
-        required: true
-      }
-    ]
-  }
-  {
-    name: 'delete-item'
-    displayName: 'Delete item'
-    method: 'DELETE'
-    urlTemplate: '/items/{id}'
-    description: 'Delete a single item.'
-    templateParameters: [
-      {
-        name: 'id'
-        type: 'string'
-        required: true
-      }
-    ]
-  }
-]
-var azureOpenAiOperations = [
-  {
-    name: 'chat-completions'
-    displayName: 'Chat completions'
-    method: 'POST'
-    urlTemplate: '/deployments/{deploymentId}/chat/completions'
-    description: 'Proxy Azure OpenAI chat completions.'
-    templateParameters: [
-      {
-        name: 'deploymentId'
-        type: 'string'
-        required: true
-      }
-    ]
-  }
-  {
-    name: 'embeddings'
-    displayName: 'Embeddings'
-    method: 'POST'
-    urlTemplate: '/deployments/{deploymentId}/embeddings'
-    description: 'Proxy Azure OpenAI embeddings.'
-    templateParameters: [
-      {
-        name: 'deploymentId'
-        type: 'string'
-        required: true
-      }
-    ]
-  }
-]
 
+// このモジュールは APIM 本体と共有シークレットだけを管理する。
+// 各 API の詳細定義は子モジュールに分割し、読みやすさを優先する。
 resource apiManagement 'Microsoft.ApiManagement/service@2022-08-01' = {
   name: apimServiceName
   location: location
@@ -153,6 +83,7 @@ resource apiManagement 'Microsoft.ApiManagement/service@2022-08-01' = {
   tags: tags
 }
 
+// CRUD バックエンド呼び出し時に APIM が付与する内部認証ヘッダー値を保存する。
 resource apimBackendSecret 'Microsoft.ApiManagement/service/namedValues@2022-08-01' = {
   parent: apiManagement
   name: apimBackendSecretNamedValueName
@@ -167,6 +98,7 @@ resource apimBackendSecret 'Microsoft.ApiManagement/service/namedValues@2022-08-
   }
 }
 
+// AOAI の API キーは APIM 内の named value に格納し、policy から参照する。
 resource azureOpenAiBackendKey 'Microsoft.ApiManagement/service/namedValues@2022-08-01' = if (enableAzureOpenAiApi) {
   parent: apiManagement
   name: azureOpenAiApiKeyNamedValueName
@@ -181,160 +113,36 @@ resource azureOpenAiBackendKey 'Microsoft.ApiManagement/service/namedValues@2022
   }
 }
 
-resource apimApi 'Microsoft.ApiManagement/service/apis@2022-08-01' = {
-  parent: apiManagement
-  name: apimApiName
-  properties: {
-    displayName: 'CRUD API'
-    description: 'Azure Functions CRUD sample protected by APIM subscription key.'
-    path: apimApiPath
-    protocols: [
-      'https'
-    ]
-    serviceUrl: 'https://${functionDefaultHostName}/api'
-    subscriptionRequired: true
-    subscriptionKeyParameterNames: {
-      header: 'X-API-Key'
-      query: 'api-key'
-    }
-    apiType: 'http'
-    type: 'http'
+module crudApi './apim-crud-api.bicep' = {
+  name: 'apimCrudApiResources'
+  params: {
+    apimServiceName: apiManagement.name
+    functionDefaultHostName: functionDefaultHostName
+    crudApiName: crudApiName
+    crudApiPath: crudApiPath
+    crudProductName: crudProductName
+    crudSubscriptionName: crudSubscriptionName
+    backendSecretNamedValueName: apimBackendSecret.name
   }
 }
 
-resource apimOperationsResource 'Microsoft.ApiManagement/service/apis/operations@2022-08-01' = [for operation in apimOperations: {
-  parent: apimApi
-  name: operation.name
-  properties: {
-    displayName: operation.displayName
-    method: operation.method
-    urlTemplate: operation.urlTemplate
-    description: operation.description
-    templateParameters: operation.templateParameters
-    responses: []
-  }
-}]
-
-resource apimApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2022-08-01' = {
-  parent: apimApi
-  name: 'policy'
-  properties: {
-    format: 'xml'
-    value: '<policies><inbound><base /><set-header name="x-backend-auth" exists-action="override"><value>{{function-backend-secret}}</value></set-header></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
-  }
-  dependsOn: [
-    apimBackendSecret
-    apimOperationsResource
-  ]
-}
-
-resource azureOpenAiApi 'Microsoft.ApiManagement/service/apis@2022-08-01' = if (enableAzureOpenAiApi) {
-  parent: apiManagement
-  name: azureOpenAiApiName
-  properties: {
-    displayName: 'Azure OpenAI API'
-    description: 'Azure OpenAI backend protected by APIM subscription key.'
-    path: azureOpenAiApiPath
-    protocols: [
-      'https'
-    ]
-    serviceUrl: azureOpenAiServiceUrl
-    subscriptionRequired: true
-    subscriptionKeyParameterNames: {
-      header: 'X-API-Key'
-      query: 'api-key'
-    }
-    apiType: 'http'
-    type: 'http'
-  }
-}
-
-resource azureOpenAiOperationsResource 'Microsoft.ApiManagement/service/apis/operations@2022-08-01' = [for operation in azureOpenAiOperations: if (enableAzureOpenAiApi) {
-  parent: azureOpenAiApi
-  name: operation.name
-  properties: {
-    displayName: operation.displayName
-    method: operation.method
-    urlTemplate: operation.urlTemplate
-    description: operation.description
-    templateParameters: operation.templateParameters
-    responses: []
-  }
-}]
-
-resource azureOpenAiApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2022-08-01' = if (enableAzureOpenAiApi) {
-  parent: azureOpenAiApi
-  name: 'policy'
-  properties: {
-    format: 'xml'
-    value: '<policies><inbound><base /><set-header name="api-key" exists-action="override"><value>{{azure-openai-api-key}}</value></set-header></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
-  }
-  dependsOn: [
-    azureOpenAiBackendKey
-    azureOpenAiOperationsResource
-  ]
-}
-
-resource apimProduct 'Microsoft.ApiManagement/service/products@2022-08-01' = {
-  parent: apiManagement
-  name: apimProductName
-  properties: {
-    displayName: 'CRUD Product'
-    description: 'Subscription-protected access to the CRUD sample API.'
-    state: 'published'
-    subscriptionRequired: true
-    terms: 'Use for sample and learning purposes.'
-  }
-}
-
-resource apimProductApi 'Microsoft.ApiManagement/service/products/apis@2022-08-01' = {
-  parent: apimProduct
-  name: apimApi.name
-}
-
-resource apimSubscription 'Microsoft.ApiManagement/service/subscriptions@2022-08-01' = {
-  parent: apiManagement
-  name: apimSubscriptionName
-  properties: {
-    allowTracing: false
-    displayName: 'Default CRUD subscription'
-    scope: apimProduct.id
-    state: 'active'
-  }
-}
-
-resource azureOpenAiProduct 'Microsoft.ApiManagement/service/products@2022-08-01' = if (enableAzureOpenAiApi) {
-  parent: apiManagement
-  name: azureOpenAiProductName
-  properties: {
-    displayName: 'Azure OpenAI Product'
-    description: 'Subscription-protected access to Azure OpenAI through APIM.'
-    state: 'published'
-    subscriptionRequired: true
-    terms: 'Use according to your Azure OpenAI usage policy.'
-  }
-}
-
-resource azureOpenAiProductApi 'Microsoft.ApiManagement/service/products/apis@2022-08-01' = if (enableAzureOpenAiApi) {
-  parent: azureOpenAiProduct
-  name: azureOpenAiApi.name
-}
-
-resource azureOpenAiSubscription 'Microsoft.ApiManagement/service/subscriptions@2022-08-01' = if (enableAzureOpenAiApi) {
-  parent: apiManagement
-  name: azureOpenAiSubscriptionName
-  properties: {
-    allowTracing: false
-    displayName: 'Default Azure OpenAI subscription'
-    scope: azureOpenAiProduct.id
-    state: 'active'
+module azureOpenAiApi './apim-aoai-api.bicep' = if (enableAzureOpenAiApi) {
+  name: 'apimAzureOpenAiApiResources'
+  params: {
+    apimServiceName: apiManagement.name
+    azureOpenAiEndpoint: azureOpenAiEndpoint
+    azureOpenAiApiName: azureOpenAiApiName
+    azureOpenAiApiPath: azureOpenAiApiPath
+    azureOpenAiProductName: azureOpenAiProductName
+    azureOpenAiSubscriptionName: azureOpenAiSubscriptionName
+    azureOpenAiApiKeyNamedValueName: azureOpenAiBackendKey.name
   }
 }
 
 output apimServiceName string = apiManagement.name
 output apimGatewayUrl string = 'https://${apiManagement.name}.azure-api.net'
-output apiBaseUrl string = 'https://${apiManagement.name}.azure-api.net/${apimApiPath}'
+output apiBaseUrl string = crudApi.outputs.apiBaseUrl
 output apiKeyHeaderName string = 'X-API-Key'
-output apimSubscriptionName string = apimSubscription.name
-output azureOpenAiApiBaseUrl string = enableAzureOpenAiApi ? 'https://${apiManagement.name}.azure-api.net/${azureOpenAiApiPath}' : ''
-output azureOpenAiApimSubscriptionName string = enableAzureOpenAiApi ? azureOpenAiSubscription.name : ''
+output apimSubscriptionName string = crudApi.outputs.subscriptionName
+output azureOpenAiApiBaseUrl string = enableAzureOpenAiApi ? azureOpenAiApi!.outputs.azureOpenAiApiBaseUrl : ''
+output azureOpenAiApimSubscriptionName string = enableAzureOpenAiApi ? azureOpenAiApi!.outputs.subscriptionName : ''

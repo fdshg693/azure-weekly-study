@@ -150,8 +150,9 @@ module apim './modules/apim.bicep' = {
     tags: tags
     backendSharedSecret: backendSharedSecret
     enableAzureOpenAiApi: enableAzureOpenAiApi
+    // APIM から AOAI へ転送する URL は、AOAI モジュールの出力をそのまま使う。
     azureOpenAiEndpoint: azureOpenAi.outputs.azureOpenAiEndpoint
-    azureOpenAiApiKey: enableAzureOpenAiApi ? listKeys(azureOpenAiAccount.id, '2025-12-01').key1 : ''
+    azureOpenAiApiKey: enableAzureOpenAiApi ? azureOpenAiAccount!.listKeys().key1 : ''
   }
 }
 

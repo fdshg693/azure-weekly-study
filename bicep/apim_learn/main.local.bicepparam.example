@@ -17,6 +17,7 @@ param apimPublisherName = 'Your Team Name'
 param apimPublisherEmail = 'your-team@example.com'
 
 // Azure OpenAI リソースとモデルデプロイをこのテンプレートで作成したい場合だけ有効化してください
+// APIM へ渡す AOAI の URL は、azure-openai.bicep の output を main.bicep 経由で利用します
 // param enableAzureOpenAiApi = true
 // param azureOpenAiLocation = 'japaneast'
 // param azureOpenAiDeploymentName = 'gpt-4o-mini'
