@@ -63,7 +63,7 @@ param azureOpenAiSubscriptionName string = 'azure-openai-default-subscription'
 @description('AOAI バックエンド API キーを保持する named value 名')
 param azureOpenAiApiKeyNamedValueName string = 'azure-openai-api-key'
 
-var apimSkuCapacity = apimSkuName == 'Developer' ? 0 : 1
+var apimSkuCapacity = apimSkuName == 'Consumption' ? 0 : 1
 
 // このモジュールは APIM 本体と共有シークレットだけを管理する。
 // 各 API の詳細定義は子モジュールに分割し、読みやすさを優先する。

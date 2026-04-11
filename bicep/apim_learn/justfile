@@ -43,6 +43,10 @@ apim-purge service_name location="japaneast":
 api-key resource_group="rg-func-crud-dev" deployment_name="main" subscription_name="crud-default-subscription":
   @$deployment = az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} | ConvertFrom-Json; $apimServiceName = $deployment.properties.outputs.apimServiceName.value; $subscriptionId = az account show --query id -o tsv; $resourceManager = (az cloud show --query endpoints.resourceManager -o tsv).TrimEnd('/'); az rest --method post --uri "$resourceManager/subscriptions/$subscriptionId/resourceGroups/{{resource_group}}/providers/Microsoft.ApiManagement/service/$apimServiceName/subscriptions/{{subscription_name}}/listSecrets?api-version=2024-05-01" --query primaryKey -o tsv
 
+# Fetch the backend shared secret that the Function app validates via x-backend-auth.
+backend-secret resource_group="rg-func-crud-dev" deployment_name="main":
+  @$deployment = az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} | ConvertFrom-Json; $functionAppName = $deployment.properties.outputs.functionAppName.value; az functionapp config appsettings list --resource-group {{resource_group}} --name $functionAppName --query "[?name=='BACKEND_SHARED_SECRET'].value | [0]" -o tsv
+
 # Fetch the APIM subscription key used for the optional Azure OpenAI proxy API.
 aoai-api-key resource_group="rg-func-crud-dev" deployment_name="main":
   @just api-key {{resource_group}} {{deployment_name}} azure-openai-default-subscription

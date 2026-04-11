@@ -23,7 +23,8 @@ param apimPublisherEmail = 'your-team@example.com'
 // param azureOpenAiDeploymentName = 'gpt-4o-mini'
 // param azureOpenAiModelName = 'gpt-4o-mini'
 // param azureOpenAiModelVersion = ''
-// param azureOpenAiDeploymentSkuName = 'Standard'
+// gpt-4o-mini を japaneast に作る場合は GlobalStandard を使ってください
+// param azureOpenAiDeploymentSkuName = 'GlobalStandard'
 // param azureOpenAiDeploymentCapacity = 10
 
 // 固定の内部シークレットを使いたい場合のみ設定してください

@@ -113,6 +113,10 @@ Content-Type: application/json
 @aoaiApiKey = <apim-aoai-subscription-key>
 @aoaiDeployment = <azure-openai-deployment-name-from-output>
 @aoaiApiVersion = 2024-10-21
+@functionDirectBaseUrl = https://<function-app-name>.azurewebsites.net/api
+@backendSharedSecret = <backend-shared-secret>
+@aoaiDirectBaseUrl = https://<azure-openai-account-name>.openai.azure.com/openai
+@aoaiDirectApiKey = <azure-openai-api-key>
 
 ### -----------------------------------------------------------
 ### 11. Chat Completions
@@ -143,4 +147,76 @@ X-API-Key: {{aoaiApiKey}}
 
 {
   "input": "Azure OpenAI through APIM"
+}
+
+### ============================================================================
+### Azure Function 直叩きテスト
+### 注意:
+###   - 現在の Function は authLevel=ANONYMOUS ですが、x-backend-auth の共有シークレット検証があります
+###   - ここで使うのは APIM の X-API-Key ではありません
+###   - backendSharedSecret は再デプロイで変わることがあるため、401 のときは最新値に更新してください
+###   - シークレットなしでは 401、正しいシークレット付きなら 200/201 を想定します
+### ============================================================================
+
+### -----------------------------------------------------------
+### 13. Function 直叩き（共有シークレットなし。401 を想定）
+### -----------------------------------------------------------
+GET {{functionDirectBaseUrl}}/items
+Content-Type: application/json
+
+### -----------------------------------------------------------
+### 14. Function 直叩き（共有シークレットあり）
+### -----------------------------------------------------------
+GET {{functionDirectBaseUrl}}/items
+Content-Type: application/json
+x-backend-auth: {{backendSharedSecret}}
+
+### -----------------------------------------------------------
+### 15. Function 直叩きで新規アイテム作成（共有シークレットあり）
+### -----------------------------------------------------------
+POST {{functionDirectBaseUrl}}/items
+Content-Type: application/json
+x-backend-auth: {{backendSharedSecret}}
+
+{
+  "name": "Function 直叩きテスト",
+  "description": "APIM を経由せずに Function App を呼び出す"
+}
+
+### ============================================================================
+### Azure OpenAI 直叩きテスト
+### 注意:
+###   - 現在の AOAI は publicNetworkAccess=Enabled かつ disableLocalAuth=false です
+###   - APIM を経由しなくても、AOAI の api-key があれば直接呼び出せます
+### ============================================================================
+
+### -----------------------------------------------------------
+### 16. AOAI 直叩き Chat Completions
+### -----------------------------------------------------------
+POST {{aoaiDirectBaseUrl}}/deployments/{{aoaiDeployment}}/chat/completions?api-version={{aoaiApiVersion}}
+Content-Type: application/json
+api-key: {{aoaiDirectApiKey}}
+
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a concise assistant."
+    },
+    {
+      "role": "user",
+      "content": "Say hello in Japanese."
+    }
+  ]
+}
+
+### -----------------------------------------------------------
+### 17. AOAI 直叩き Embeddings
+### -----------------------------------------------------------
+POST {{aoaiDirectBaseUrl}}/deployments/{{aoaiDeployment}}/embeddings?api-version={{aoaiApiVersion}}
+Content-Type: application/json
+api-key: {{aoaiDirectApiKey}}
+
+{
+  "input": "Azure OpenAI direct access"
 }

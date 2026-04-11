@@ -134,10 +134,6 @@ module azureOpenAi './modules/azure-openai.bicep' = {
   }
 }
 
-resource azureOpenAiAccount 'Microsoft.CognitiveServices/accounts@2025-12-01' existing = if (enableAzureOpenAiApi) {
-  name: azureOpenAiAccountName
-}
-
 module apim './modules/apim.bicep' = {
   name: 'apiManagementResources'
   params: {
@@ -152,7 +148,7 @@ module apim './modules/apim.bicep' = {
     enableAzureOpenAiApi: enableAzureOpenAiApi
     // APIM から AOAI へ転送する URL は、AOAI モジュールの出力をそのまま使う。
     azureOpenAiEndpoint: azureOpenAi.outputs.azureOpenAiEndpoint
-    azureOpenAiApiKey: enableAzureOpenAiApi ? azureOpenAiAccount!.listKeys().key1 : ''
+    azureOpenAiApiKey: azureOpenAi.outputs.azureOpenAiApiKey
   }
 }
 

@@ -69,7 +69,7 @@ just init-local-param
 - `apimPublisherEmail`
 - `tags`
 
-Azure OpenAI はモデルごとにリージョン可用性が異なります。`enableAzureOpenAiApi = true` にする場合は、`azureOpenAiLocation` と `azureOpenAiModelName` の組み合わせが利用可能かを事前に確認してください。
+Azure OpenAI はモデルごとにリージョン可用性が異なります。`enableAzureOpenAiApi = true` にする場合は、`azureOpenAiLocation` と `azureOpenAiModelName` の組み合わせが利用可能かを事前に確認してください。あわせて deployment SKU も確認してください。たとえば `japaneast` の `gpt-4o-mini` は regional `Standard` ではなく `GlobalStandard` が必要です。
 
 ## 3. デプロイ
 

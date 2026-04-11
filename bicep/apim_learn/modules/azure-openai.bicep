@@ -88,3 +88,5 @@ resource azureOpenAiDeployment 'Microsoft.CognitiveServices/accounts/deployments
 output azureOpenAiAccountName string = enableAzureOpenAiApi ? azureOpenAiAccount.name : ''
 output azureOpenAiEndpoint string = enableAzureOpenAiApi ? 'https://${azureOpenAiAccount.name}.openai.azure.com' : ''
 output azureOpenAiDeploymentName string = enableAzureOpenAiApi ? azureOpenAiDeployment.name : ''
+@secure()
+output azureOpenAiApiKey string = enableAzureOpenAiApi ? azureOpenAiAccount!.listKeys().key1 : ''
