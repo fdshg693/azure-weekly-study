@@ -1,3 +1,14 @@
+# Ignore any local variable files
+local.tfvars
+*.local.tfvars
+
+# 自分用のファイルは無視
+**maikuma**
+
+.env
+__pycache__/
+.venv/
+
 # Local .terraform directories
 **/.terraform/*
 
@@ -48,12 +59,3 @@ Thumbs.db
 *.iml
 *.sublime-project
 *.sublime-workspace
-
-# Ignore any local variable files
-local.tfvars
-*.local.tfvars
-
-# 自分用のファイルは無視
-**maikuma**
-
-temp/
