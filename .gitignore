@@ -4,6 +4,7 @@ local.tfvars
 
 # 自分用のファイルは無視
 **maikuma**
+logs/
 
 .env
 __pycache__/

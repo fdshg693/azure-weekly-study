@@ -3,14 +3,6 @@ name: use-tavily
 description: Skill to understand how to utilize Tavily to achieve specific goals in this project. **NOT HOW TO USE TAVILY SDK**. For that, see the `tavily-sdk` skill. 
 ---
 
-このスキルは、Tavily を使った情報収集を「最小限の引数で呼べる Python スクリプト群」として整理するためのもの。
-スクリプトは同階層の `src` ディレクトリに配置する想定で、共通処理は `src` 配下の共通モジュールへ切り出してよい。
-
-実装は `tavily-sdk` スキルを使い、Python SDK ベースで行う。
-
-python のインストール状況: !`python --version`
-tavily-sdk のインストール状況: !`pip show tavily-sdk`
-
 ## クエリ言語とドメインフィルタの実務ルール
 
 - `query` や `input` は **日本語でも問題なく使ってよい**。特に記事調査や要件整理では、日本語の問いをそのまま渡して構わない。
