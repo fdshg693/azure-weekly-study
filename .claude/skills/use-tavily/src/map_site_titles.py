@@ -1,10 +1,16 @@
-"""Map a site with Tavily, fetch page titles, and return an aggregated outline.
+r"""Map a site with Tavily, fetch page titles, and return an aggregated outline.
 
 This wrapper uses Tavily only for URL discovery and then fetches each mapped page
 directly to resolve titles. Callers mainly provide a root URL plus a high-level
 detail preset; the preset values below control both Tavily map behavior and the
 local title-fetch behavior. Edit the preset table near the top of this file when
 you want to change depth, breadth, fetch limits, or concurrency.
+
+PowerShell example:
+    python .\.claude\skills\use-tavily\src\map_site_titles.py https://learn.microsoft.com/azure/api-management/ --output temp\web\site_map_apim_docs.json
+
+bash example:
+    python ./.claude/skills/use-tavily/src/map_site_titles.py https://learn.microsoft.com/azure/api-management/ --output temp/web/site_map_apim_docs.json
 """
 
 from __future__ import annotations
@@ -438,7 +444,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         dotenv_path=dotenv_path,
     )
 
-    emit_payload(payload, args.output)
+    emit_payload(payload, args.output, public_payload=pages)
     return 0
 
 

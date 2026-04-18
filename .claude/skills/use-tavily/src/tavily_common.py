@@ -17,6 +17,9 @@ from dotenv import find_dotenv, load_dotenv
 from tavily import TavilyClient
 
 
+LOG_DIRECTORY = Path(__file__).resolve().parent / "logs"
+
+
 def load_environment() -> str | None:
     dotenv_path = find_dotenv(filename=".env", usecwd=True)
     if dotenv_path:
@@ -72,17 +75,37 @@ def build_response_payload(
     }
 
 
-def render_json(payload: dict[str, Any], *, pretty: bool = True) -> str:
+def render_json(payload: Any, *, pretty: bool = True) -> str:
     indent = 2 if pretty else None
     return json.dumps(payload, ensure_ascii=False, indent=indent) + "\n"
 
 
-def emit_payload(payload: dict[str, Any], output_path: Path | None, *, pretty: bool = True) -> None:
+def build_log_output_path(output_path: Path | None, *, script_name: str) -> Path:
+    file_name = output_path.name if output_path else f"{Path(script_name).stem}.json"
+    base_path = Path(file_name)
+    suffix = base_path.suffix or ".json"
+    return LOG_DIRECTORY / f"{base_path.stem}-log{suffix}"
+
+
+def emit_payload(
+    payload: dict[str, Any],
+    output_path: Path | None,
+    *,
+    public_payload: Any | None = None,
+    pretty: bool = True,
+) -> None:
+    display_payload = payload if public_payload is None else public_payload
+    log_path = build_log_output_path(output_path, script_name=payload.get("script", "payload"))
+    write_output(log_path, payload, pretty=pretty)
+
     if output_path:
-        write_output(output_path, payload, pretty=pretty)
+        write_output(output_path, display_payload, pretty=pretty)
         print(f"Wrote response to {output_path}")
+        print(f"Wrote full log to {log_path}")
         return
-    print(render_json(payload, pretty=pretty), end="")
+
+    print(render_json(display_payload, pretty=pretty), end="")
+    print(f"Wrote full log to {log_path}", file=os.sys.stderr)
 
 
 def dedupe_preserve_order(values: Sequence[str]) -> list[str]:
@@ -97,6 +120,6 @@ def dedupe_preserve_order(values: Sequence[str]) -> list[str]:
     return normalized_values
 
 
-def write_output(output_path: Path, payload: dict[str, Any], *, pretty: bool = True) -> None:
+def write_output(output_path: Path, payload: Any, *, pretty: bool = True) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(render_json(payload, pretty=pretty), encoding="utf-8")

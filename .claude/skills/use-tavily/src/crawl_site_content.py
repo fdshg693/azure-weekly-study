@@ -1,10 +1,16 @@
-"""Crawl an entire site with Tavily using a small, opinionated CLI.
+r"""Crawl an entire site with Tavily using a small, opinionated CLI.
 
 Use this script when you already know the target site and want Tavily to walk
 it directly and return page content in one step. Callers mainly provide a root
 URL plus an optional query and detail preset; edit the preset table near the
 top of this file when you want to change crawl breadth, depth, or extraction
 quality.
+
+PowerShell example:
+    python .\.claude\skills\use-tavily\src\crawl_site_content.py https://learn.microsoft.com/azure/api-management/ --query "workspace feature limitations" --output temp\web\site_crawl_apim_workspace.json
+
+bash example:
+    python ./.claude/skills/use-tavily/src/crawl_site_content.py https://learn.microsoft.com/azure/api-management/ --query "workspace feature limitations" --output temp/web/site_crawl_apim_workspace.json
 """
 
 from __future__ import annotations
@@ -254,7 +260,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         dotenv_path=dotenv_path,
     )
 
-    emit_payload(payload, args.output)
+    emit_payload(payload, args.output, public_payload=crawl_run["response"].get("results") or [])
     return 0
 
 

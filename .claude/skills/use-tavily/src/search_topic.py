@@ -1,9 +1,15 @@
-"""Search the web with Tavily using a small, opinionated CLI.
+r"""Search the web with Tavily using a small, opinionated CLI.
 
 This wrapper keeps search-depth and result-count tuning inside the file so
 callers only need a query, an optional detail preset, and optional domain
 filters. Adjust the preset values below when you want different Tavily search
 behavior. Other scripts in this directory can import the reusable search helper.
+
+PowerShell example:
+    python .\.claude\skills\use-tavily\src\search_topic.py "Microsoft Fabric overview" --output temp\web\search_fabric_overview.json
+
+bash example:
+    python ./.claude/skills/use-tavily/src/search_topic.py "Microsoft Fabric overview" --output temp/web/search_fabric_overview.json
 """
 
 from __future__ import annotations
@@ -160,7 +166,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         dotenv_path=dotenv_path,
     )
 
-    emit_payload(payload, args.output)
+    emit_payload(payload, args.output, public_payload=search_run["response"].get("results") or [])
     return 0
 
 

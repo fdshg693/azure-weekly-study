@@ -1,9 +1,15 @@
-"""Extract content from one or more URLs with a small, opinionated CLI.
+r"""Extract content from one or more URLs with a small, opinionated CLI.
 
 This wrapper keeps Tavily-specific tuning inside the file so callers only need
 to provide URLs, an optional query, and a high-level detail preset.
 Adjust the preset values below when you want different Tavily behavior.
 Other scripts in this directory can also import the reusable extraction helper.
+
+PowerShell example:
+    python .\.claude\skills\use-tavily\src\extract_url_content.py https://learn.microsoft.com/azure/api-management/api-management-policies --query "policy capabilities" --output temp\web\extract_apim_policies.json
+
+bash example:
+    python ./.claude/skills/use-tavily/src/extract_url_content.py https://learn.microsoft.com/azure/api-management/api-management-policies --query "policy capabilities" --output temp/web/extract_apim_policies.json
 """
 
 from __future__ import annotations
@@ -144,7 +150,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         dotenv_path=dotenv_path,
     )
 
-    emit_payload(payload, args.output)
+    emit_payload(payload, args.output, public_payload=extraction["response"].get("results") or [])
 
     return 0
 

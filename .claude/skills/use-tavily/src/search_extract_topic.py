@@ -1,10 +1,16 @@
-"""Search with Tavily and then extract content from the discovered URLs.
+r"""Search with Tavily and then extract content from the discovered URLs.
 
 This script composes the reusable search helper from search_topic.py and the
 reusable extraction helper from extract_url_content.py. Callers only provide a
 query, an optional detail preset, and optional domain filters. The preset for
 this pipeline is resolved inside this file into concrete Tavily arguments
 before the helper functions are called.
+
+PowerShell example:
+    python .\.claude\skills\use-tavily\src\search_extract_topic.py "Azure API Management policy expressions limitations" --output temp\web\search_extract_apim_policy_limitations.json
+
+bash example:
+    python ./.claude/skills/use-tavily/src/search_extract_topic.py "Azure API Management policy expressions limitations" --output temp/web/search_extract_apim_policy_limitations.json
 """
 
 from __future__ import annotations
@@ -201,7 +207,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         dotenv_path=dotenv_path,
     )
 
-    emit_payload(payload, args.output)
+    emit_payload(
+        payload,
+        args.output,
+        public_payload=(extraction["response"].get("results") or []) if extraction else [],
+    )
 
     if not selected_urls:
         print("Search returned no URLs to extract.", file=sys.stderr)

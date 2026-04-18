@@ -1,9 +1,15 @@
-"""Map a site with Tavily and then extract content from the discovered URLs.
+r"""Map a site with Tavily and then extract content from the discovered URLs.
 
 Use this script when you want to inspect candidate pages first via site mapping
 and then fetch content only for the selected mapped URLs. Callers mainly provide
 a root URL, an optional query, and a detail preset; edit the preset table near
 the top of this file when you want to change map breadth or extraction quality.
+
+PowerShell example:
+    python .\.claude\skills\use-tavily\src\map_extract_site_content.py https://learn.microsoft.com/azure/api-management/ --query "workspace feature limitations" --output temp\web\site_extract_apim_workspace.json
+
+bash example:
+    python ./.claude/skills/use-tavily/src/map_extract_site_content.py https://learn.microsoft.com/azure/api-management/ --query "workspace feature limitations" --output temp/web/site_extract_apim_workspace.json
 """
 
 from __future__ import annotations
@@ -219,7 +225,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         dotenv_path=dotenv_path,
     )
 
-    emit_payload(payload, args.output)
+    emit_payload(
+        payload,
+        args.output,
+        public_payload=(extraction["response"].get("results") or []) if extraction else [],
+    )
 
     if not selected_urls:
         print("Map returned no URLs to extract.", file=sys.stderr)

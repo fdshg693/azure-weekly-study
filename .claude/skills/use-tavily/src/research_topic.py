@@ -1,9 +1,15 @@
-"""Run Tavily research with a small, opinionated CLI.
+r"""Run Tavily research with a small, opinionated CLI.
 
 This wrapper keeps model selection and polling behavior inside the file so
 callers only need to provide a research prompt, an optional detail preset, and
 an optional JSON output path. Adjust the preset values below when you want
 different Tavily research behavior.
+
+PowerShell example:
+    python .\.claude\skills\use-tavily\src\research_topic.py "Microsoft Fabric の概要を整理してください" --output temp\web\research_fabric_overview.json
+
+bash example:
+    python ./.claude/skills/use-tavily/src/research_topic.py "Microsoft Fabric の概要を整理してください" --output temp/web/research_fabric_overview.json
 """
 
 from __future__ import annotations
@@ -16,7 +22,7 @@ from typing import Any
 
 from tavily.errors import InvalidAPIKeyError
 
-from tavily_common import build_response_payload, create_tavily_client, render_json, write_output
+from tavily_common import build_response_payload, create_tavily_client, emit_payload
 
 
 DETAIL_PRESETS: dict[str, dict[str, Any]] = {
@@ -79,15 +85,6 @@ def wait_for_research_completion(client: Any, request_id: str, *, detail: str) -
     elapsed_seconds = preset["max_wait_seconds"] - max(deadline - time.monotonic(), 0.0)
     return last_response, True, elapsed_seconds
 
-
-def emit_payload(payload: dict[str, Any], output_path: Path | None) -> None:
-    if output_path:
-        write_output(output_path, payload)
-        print(f"Wrote response to {output_path}")
-        return
-    print(render_json(payload), end="")
-
-
 def main() -> int:
     args = parse_args()
     preset = DETAIL_PRESETS[args.detail]
@@ -141,7 +138,7 @@ def main() -> int:
         dotenv_path=dotenv_path,
     )
 
-    emit_payload(payload, args.output)
+    emit_payload(payload, args.output, public_payload=final_response.get("content") or final_response)
 
     final_status = final_response.get("status")
     if not completed:
