@@ -29,9 +29,11 @@ Azure App Service（Linux / Node.js 20 LTS）上で動く Azure OpenAI チャッ
 | [main.tf](main.tf) | RG / Plan / Web App / Azure OpenAI / モデルデプロイ / ロール割り当て |
 | [outputs.tf](outputs.tf) | Web App URL、OpenAI エンドポイント、動作確認コマンド等 |
 | [justfile](justfile) | Terraform 操作・パッケージ・デプロイ・ローカル開発のタスク |
-| [app/server.js](app/server.js) | Express + `openai`（AzureOpenAI クライアント）+ `@azure/identity` |
+| [app/server.js](app/server.js) | Express + `openai`（AzureOpenAI クライアント）+ `@azure/identity`、`/auth/*` `/profile` ルートを mount |
+| [app/auth.js](app/auth.js) | MSAL Node を使った Entra ID 認可コードフロー + Microsoft Graph `/me` 呼び出し |
 | [app/views/index.ejs](app/views/index.ejs) | Bootstrap 製のシンプルなチャット UI |
-| [app/package.json](app/package.json) | `express` / `ejs` / `openai` / `@azure/identity` の依存定義 |
+| [app/views/profile.ejs](app/views/profile.ejs) | Graph `/me` から取得したサインインユーザー情報を表示するページ |
+| [app/package.json](app/package.json) | `express` / `ejs` / `openai` / `@azure/identity` / `@azure/msal-node` / `express-session` / `axios` の依存定義 |
 
 ## 主な変数（デフォルト値）
 
@@ -43,8 +45,6 @@ Azure App Service（Linux / Node.js 20 LTS）上で動く Azure OpenAI チャッ
 | `web_app_name` | `webapp-chatbot-dev-seiwan` | URL `https://<name>.azurewebsites.net` の一部、グローバル一意 |
 | `openai_account_name` | `aoai-chatbot-dev-seiwan` | `custom_subdomain_name` にもなる、グローバル一意 |
 | `openai_deployment_name` | `gpt-4o-mini` | アプリが `AZURE_OPENAI_DEPLOYMENT` で参照する名前 |
-| `openai_model_version` | `2024-07-18` | gpt-4o-mini の利用可能バージョン |
-| `openai_api_version` | `2024-10-21` | アプリが呼ぶ Azure OpenAI API バージョン |
 
 ## アプリ側の仕組み
 
@@ -96,6 +96,52 @@ just dev          # AZURE_OPENAI_ENDPOINT を inject して `npm install && npm 
 
 > **F1 プランの注意**: チュートリアルでは `B1` を推奨。F1 でも動く可能性はあるが、`openai` + `@azure/identity` の npm install で 1GB のメモリ上限を踏むことがあるため、本プロジェクトは既定で `B1` にしてある。
 
+## Entra ID 認証 + Graph API（`/profile` ページ）
+
+`/profile` は Microsoft Entra ID にサインインしたユーザー情報を Microsoft Graph 経由で表示する追加ページ。チャット機能 (`/`, `/chat`) には影響しない。
+
+参考: [Tutorial: Sign in users and call Microsoft Graph from a Node.js web app (MSAL)](https://learn.microsoft.com/en-us/entra/identity-platform/tutorial-v2-nodejs-webapp-msal)
+
+### 1. App Registration を作成（手動）
+
+Azure ポータル > **Microsoft Entra ID** > **App registrations** > **New registration**:
+
+| 項目 | 値 |
+| --- | --- |
+| Name | 任意 (例: `chatbot-graph-demo`) |
+| Supported account types | `Accounts in this organizational directory only` (シングルテナント) |
+| Redirect URI | **Web** / `https://<web_app_name>.azurewebsites.net/auth/redirect` |
+
+作成後:
+- **Authentication** > **Front-channel logout URL** に `https://<web_app_name>.azurewebsites.net/` を追加
+- **Certificates & secrets** > **New client secret** を作成し値を控える
+- **API permissions** で **Microsoft Graph** > **Delegated** > `User.Read` を追加 (既定で付いている)
+
+### 2. Terraform に値を投入
+
+`terraform.tfvars` または `-var` で:
+
+```hcl
+entra_tenant_id        = "00000000-0000-0000-0000-000000000000"
+entra_client_id        = "11111111-1111-1111-1111-111111111111"
+entra_client_secret    = "<App Registration のシークレット値>"
+express_session_secret = "<32 文字以上のランダム文字列>"
+```
+
+`just up` で再 apply するとアプリ側の App Settings が更新される。`entra_client_id` / `entra_client_secret` が空のままだと `/profile` は 503 を返すだけで、チャットは普通に動く。
+
+### 3. ローカル開発
+
+`http://localhost:3000/auth/redirect` を App Registration の Redirect URI に追加し、環境変数で値を渡す:
+
+```powershell
+$env:TENANT_ID="..."; $env:CLIENT_ID="..."; $env:CLIENT_SECRET="..."
+$env:REDIRECT_URI="http://localhost:3000/auth/redirect"
+$env:POST_LOGOUT_REDIRECT_URI="http://localhost:3000/"
+$env:EXPRESS_SESSION_SECRET="dev-secret-please-change"
+npm install; npm start
+```
+
 ## トラブルシューティング
 
 - **チャット送信時に "Azure OpenAI からの応答取得に失敗しました"**
@@ -105,3 +151,7 @@ just dev          # AZURE_OPENAI_ENDPOINT を inject して `npm install && npm 
   - `openai_location` を `eastus` / `swedencentral` 等、対象モデルが提供されているリージョンに変更
 - **ローカル `just dev` で 403**
   - `just grant-self` を実行。それでも駄目なら `az account show` で対象サブスクリプションが合っているか確認
+- **`/profile` で `AADSTS50011` (Redirect URI mismatch)**
+  - App Registration の **Authentication** に登録した Redirect URI が `https://<web_app_name>.azurewebsites.net/auth/redirect` と完全一致しているか確認 (末尾スラッシュ・大小文字も)
+- **`/profile` で 503「Entra ID 認証が未設定です」**
+  - `terraform output` 後、Web App の App Settings に `CLIENT_ID` / `CLIENT_SECRET` / `TENANT_ID` が入っているか `az webapp config appsettings list` で確認

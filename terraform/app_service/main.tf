@@ -107,6 +107,20 @@ resource "azurerm_linux_web_app" "main" {
     "AZURE_OPENAI_ENDPOINT"    = azurerm_cognitive_account.openai.endpoint
     "AZURE_OPENAI_DEPLOYMENT"  = azurerm_cognitive_deployment.chat.name
     "AZURE_OPENAI_API_VERSION" = var.openai_api_version
+
+    # express-session を本番モード (secure cookie) で動かす
+    "NODE_ENV"               = "production"
+    "EXPRESS_SESSION_SECRET" = var.express_session_secret
+
+    # Microsoft Entra ID (App Registration) + Microsoft Graph 用の設定
+    # 値が空のままだと /profile は 503 を返し既存のチャット機能は影響を受けない
+    "CLOUD_INSTANCE"            = "https://login.microsoftonline.com/"
+    "TENANT_ID"                 = var.entra_tenant_id
+    "CLIENT_ID"                 = var.entra_client_id
+    "CLIENT_SECRET"             = var.entra_client_secret
+    "REDIRECT_URI"              = "https://${var.web_app_name}.azurewebsites.net/auth/redirect"
+    "POST_LOGOUT_REDIRECT_URI"  = "https://${var.web_app_name}.azurewebsites.net/"
+    "GRAPH_API_ENDPOINT"        = "https://graph.microsoft.com/"
   }
 
   https_only = true

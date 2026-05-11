@@ -11,7 +11,19 @@
   </head>
   <body class="bg-light">
     <div class="container py-4" style="max-width: 720px;">
-      <h1 class="mb-4"><%= title %></h1>
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="mb-0"><%= title %></h1>
+        <div>
+          <% if (typeof signedIn !== "undefined" && signedIn) { %>
+            <a href="/profile" class="btn btn-outline-primary btn-sm">プロファイル</a>
+            <a href="/auth/signout" class="btn btn-outline-danger btn-sm">サインアウト</a>
+          <% } else if (typeof authConfigured !== "undefined" && authConfigured) { %>
+            <a href="/auth/signin" class="btn btn-outline-primary btn-sm">Entra ID でサインイン</a>
+          <% } else { %>
+            <a href="/profile" class="btn btn-outline-secondary btn-sm">プロファイル (未設定)</a>
+          <% } %>
+        </div>
+      </div>
       <div class="card mb-3">
         <div class="card-body">
           <div id="chat-log" class="mb-3" style="min-height: 240px; max-height: 60vh; overflow-y: auto;"></div>

@@ -48,7 +48,7 @@ variable "app_service_plan_sku" {
     F1 で動作しない場合は B1 以上を推奨。
   EOT
   type        = string
-  default     = "B1"
+  default     = "S1"
 
   validation {
     condition     = contains(["F1", "B1", "S1", "P1v2", "P1v3"], var.app_service_plan_sku)
@@ -154,6 +154,38 @@ variable "openai_api_version" {
   description = "アプリが呼び出す Azure OpenAI の API バージョン"
   type        = string
   default     = "2024-10-21"
+}
+
+# ----------------------------------------------------------------------------
+# Microsoft Entra ID (App Registration) / Microsoft Graph 関連の変数
+# ----------------------------------------------------------------------------
+# これらの値は事前に Entra ID 側で App Registration を作成して取得する。
+# 手順は README の「Entra ID 認証 + Graph API」を参照。
+# 未設定 (空文字) の場合、/profile ページは 503 を返し既存チャット機能は影響を受けない。
+variable "entra_tenant_id" {
+  description = "Entra ID テナント ID (App Registration の Directory (tenant) ID)。空文字なら認証無効"
+  type        = string
+  default     = ""
+}
+
+variable "entra_client_id" {
+  description = "App Registration のアプリケーション (クライアント) ID。空文字なら認証無効"
+  type        = string
+  default     = ""
+}
+
+variable "entra_client_secret" {
+  description = "App Registration のクライアントシークレット。空文字なら認証無効"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "express_session_secret" {
+  description = "express-session の署名用シークレット。本番では必ず強いランダム値を設定すること"
+  type        = string
+  default     = ""
+  sensitive   = true
 }
 
 # ----------------------------------------------------------------------------
