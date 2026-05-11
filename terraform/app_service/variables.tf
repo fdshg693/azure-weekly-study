@@ -29,7 +29,7 @@ variable "app_service_plan_name" {
       - 1-60文字の長さ制限
   EOT
   type        = string
-  default     = "asp-minimal-site-dev"
+  default     = "asp-chatbot-dev"
 
   validation {
     condition     = can(regex("^[a-zA-Z0-9-]{1,60}$", var.app_service_plan_name))
@@ -44,10 +44,11 @@ variable "app_service_plan_sku" {
       - F1: Free プラン（無料枠、開発・テスト向け、60分/日の CPU 制限あり）
       - B1: Basic プラン（小規模本番向け、カスタムドメイン対応）
       - S1: Standard プラン（本番向け、スケールアウト対応）
-    開発環境には F1 を推奨
+    Azure OpenAI チャットボットでは npm install のメモリ消費が大きいため、
+    F1 で動作しない場合は B1 以上を推奨。
   EOT
   type        = string
-  default     = "F1"
+  default     = "B1"
 
   validation {
     condition     = contains(["F1", "B1", "S1", "P1v2", "P1v3"], var.app_service_plan_sku)
@@ -68,12 +69,91 @@ variable "web_app_name" {
       - グローバルで一意である必要がある
   EOT
   type        = string
-  default     = "webapp-minimal-dev-seiwan"
+  default     = "webapp-chatbot-dev-seiwan"
 
   validation {
     condition     = can(regex("^[a-zA-Z0-9-]{2,60}$", var.web_app_name))
     error_message = "Web App名は英数字とハイフンのみで、2-60文字の長さである必要があります。"
   }
+}
+
+# ----------------------------------------------------------------------------
+# Azure OpenAI（Cognitive Services）関連の変数
+# ----------------------------------------------------------------------------
+variable "openai_account_name" {
+  description = <<-EOT
+    Azure OpenAI アカウント名。
+    custom_subdomain_name にも同じ値が使われるため、グローバルで一意である必要がある。
+    エンドポイントは https://<name>.openai.azure.com/ になる。
+  EOT
+  type        = string
+  default     = "aoai-chatbot-dev-seiwan"
+
+  validation {
+    condition     = can(regex("^[a-zA-Z0-9-]{2,64}$", var.openai_account_name))
+    error_message = "openai_account_name は英数字とハイフンのみで、2-64文字の長さである必要があります。"
+  }
+}
+
+variable "openai_location" {
+  description = <<-EOT
+    Azure OpenAI リソースをデプロイするリージョン。
+    モデルの提供状況はリージョンごとに異なるため、利用したいモデル（既定: gpt-4o-mini）
+    の対応リージョンを必ず確認すること:
+    https://learn.microsoft.com/azure/ai-services/openai/concepts/models#model-summary-table-and-region-availability
+  EOT
+  type        = string
+  default     = "Japan East"
+}
+
+variable "openai_sku_name" {
+  description = "Azure OpenAI アカウントの SKU（通常は S0 のみ）"
+  type        = string
+  default     = "S0"
+}
+
+variable "openai_deployment_name" {
+  description = "Azure OpenAI 上のモデルデプロイ名（アプリが指定する deployment 名）"
+  type        = string
+  default     = "gpt-4o-mini"
+}
+
+variable "openai_model_name" {
+  description = "デプロイするモデル名"
+  type        = string
+  default     = "gpt-4o-mini"
+}
+
+variable "openai_model_version" {
+  description = "デプロイするモデルのバージョン"
+  type        = string
+  default     = "2024-07-18"
+}
+
+variable "openai_deployment_sku" {
+  description = <<-EOT
+    モデルデプロイのスケールタイプ（azurerm 3.x では cognitive_deployment.scale.type にマップ）。
+    主な選択肢:
+      - GlobalStandard: 推奨。Japan East を含む多くのリージョンで gpt-4o-mini を提供
+      - Standard: 一部リージョン限定（Japan East では gpt-4o-mini 非対応）
+      - ProvisionedManaged: 予約スループット用
+    リージョン × モデル × SKU の対応表:
+    https://learn.microsoft.com/azure/ai-services/openai/concepts/models#model-summary-table-and-region-availability
+  EOT
+  type        = string
+  default     = "GlobalStandard"
+}
+
+variable "openai_deployment_capacity" {
+  description = "モデルデプロイの TPM 容量（1 = 1000 TPM 単位）"
+  type        = number
+  default     = 1
+}
+
+variable "openai_api_version" {
+  description = "アプリが呼び出す Azure OpenAI の API バージョン"
+  type        = string
+  default     = "2024-10-21"
 }
 
 # ----------------------------------------------------------------------------
@@ -84,7 +164,7 @@ variable "tags" {
   type        = map(string)
   default = {
     Environment = "Development"
-    Project     = "AppServiceDemo"
+    Project     = "AzureOpenAIChatbot"
     ManagedBy   = "Terraform"
   }
 }

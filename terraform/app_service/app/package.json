@@ -1,5 +1,5 @@
 {
-  "name": "minimal-app",
+  "name": "chatbot-app",
   "version": "1.0.0",
   "private": true,
   "main": "server.js",
@@ -8,5 +8,11 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "@azure/identity": "^4.4.1",
+    "ejs": "^3.1.10",
+    "express": "^4.21.0",
+    "openai": "^4.68.0"
   }
 }

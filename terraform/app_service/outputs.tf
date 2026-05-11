@@ -29,22 +29,12 @@ output "app_service_plan_sku" {
   value       = azurerm_service_plan.main.sku_name
 }
 
-output "app_service_plan_os" {
-  description = "App Service Plan の OS タイプ"
-  value       = azurerm_service_plan.main.os_type
-}
-
 # ----------------------------------------------------------------------------
 # Web App 情報
 # ----------------------------------------------------------------------------
 output "web_app_name" {
   description = "Web App 名"
   value       = azurerm_linux_web_app.main.name
-}
-
-output "web_app_id" {
-  description = "Web App のリソースID"
-  value       = azurerm_linux_web_app.main.id
 }
 
 output "web_app_url" {
@@ -57,29 +47,52 @@ output "web_app_default_hostname" {
   value       = azurerm_linux_web_app.main.default_hostname
 }
 
+output "web_app_principal_id" {
+  description = "Web App のシステム割り当てマネージド ID の principal_id"
+  value       = azurerm_linux_web_app.main.identity[0].principal_id
+}
+
+# ----------------------------------------------------------------------------
+# Azure OpenAI 情報
+# ----------------------------------------------------------------------------
+output "openai_endpoint" {
+  description = "Azure OpenAI エンドポイント（アプリの AZURE_OPENAI_ENDPOINT と同じ）"
+  value       = azurerm_cognitive_account.openai.endpoint
+}
+
+output "openai_account_name" {
+  description = "Azure OpenAI アカウント名"
+  value       = azurerm_cognitive_account.openai.name
+}
+
+output "openai_deployment_name" {
+  description = "デプロイ済みモデル名（アプリの AZURE_OPENAI_DEPLOYMENT）"
+  value       = azurerm_cognitive_deployment.chat.name
+}
+
 # ----------------------------------------------------------------------------
 # 動作確認用の CLI コマンド
 # ----------------------------------------------------------------------------
 output "verify_commands" {
   description = "デプロイ後の動作確認コマンド"
-  value = <<-EOT
+  value       = <<-EOT
     # ============================================================
-    # App Service 動作確認コマンド
+    # チャットボット 動作確認コマンド
     # ============================================================
 
-    # 1. ブラウザでサイトを開く
+    # 1. ブラウザでチャット UI を開く
     az webapp browse --name ${azurerm_linux_web_app.main.name} --resource-group ${azurerm_resource_group.main.name}
 
     # 2. Web App の情報を確認
     az webapp show --name ${azurerm_linux_web_app.main.name} --resource-group ${azurerm_resource_group.main.name} --output table
 
-    # 3. App Service Plan の情報を確認
-    az appservice plan show --name ${azurerm_service_plan.main.name} --resource-group ${azurerm_resource_group.main.name} --output table
-
-    # 4. アプリのログをストリーミング
+    # 3. アプリのログをストリーミング（OpenAI 呼び出しのエラーもここに出る）
     az webapp log tail --name ${azurerm_linux_web_app.main.name} --resource-group ${azurerm_resource_group.main.name}
 
-    # 5. curl でサイトの応答を確認
+    # 4. Azure OpenAI へ curl で疎通確認（要: 自分のアカウントに OpenAI User ロール）
     curl -sI https://${azurerm_linux_web_app.main.default_hostname}
+
+    # 5. ロール割り当てを確認
+    az role assignment list --scope ${azurerm_cognitive_account.openai.id} --output table
   EOT
 }
