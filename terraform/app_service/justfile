@@ -1,0 +1,69 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+# Terraform variables.tf のデフォルト値と合わせる
+resource_group := "rg-app-service-dev"
+web_app_name   := "webapp-minimal-dev-seiwan"
+app_dir        := "app"
+zip_path       := "app.zip"
+
+default:
+  @just --list
+
+# ----------------------------------------------------------------------------
+# Terraform
+# ----------------------------------------------------------------------------
+
+# Terraform プロバイダーを初期化
+init:
+  @terraform init
+
+# 変更内容のプレビュー
+plan:
+  @terraform plan
+
+# インフラを作成・更新（確認なし）
+apply:
+  @terraform apply -auto-approve
+
+# インフラを削除（確認なし）
+destroy:
+  @terraform destroy -auto-approve
+
+# 出力値を表示
+output:
+  @terraform output
+
+# ----------------------------------------------------------------------------
+# アプリのパッケージング・デプロイ
+# ----------------------------------------------------------------------------
+
+# app/ を zip にパッケージング
+package:
+  @if (Test-Path {{zip_path}}) { Remove-Item {{zip_path}} -Force }; Compress-Archive -Path {{app_dir}}/* -DestinationPath {{zip_path}}; Write-Host "Created {{zip_path}}"
+
+# パッケージして Web App にデプロイ（zip deploy）
+deploy: package
+  @az webapp deploy --resource-group {{resource_group}} --name {{web_app_name}} --src-path {{zip_path}} --type zip
+
+# インフラ作成 → アプリデプロイをまとめて実行
+up: apply deploy
+
+# ----------------------------------------------------------------------------
+# 動作確認
+# ----------------------------------------------------------------------------
+
+# Web App の URL を表示
+url:
+  @terraform output -raw web_app_url
+
+# ブラウザで Web App を開く
+open:
+  @az webapp browse --name {{web_app_name}} --resource-group {{resource_group}}
+
+# アプリのログをストリーミング
+logs:
+  @az webapp log tail --name {{web_app_name}} --resource-group {{resource_group}}
+
+# HTTP 応答ヘッダーを確認
+curl:
+  @$hostname = terraform output -raw web_app_default_hostname; curl.exe -sI "https://$hostname"

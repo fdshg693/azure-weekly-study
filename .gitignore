@@ -6,6 +6,8 @@ local.tfvars
 **maikuma**
 logs/
 
+*.zip
+
 .env
 __pycache__/
 .venv/
