@@ -35,6 +35,19 @@ static_web_app_name = "swa-htmx-dev-seiwan"
 # 対応リージョン: West US 2 / Central US / East US 2 / West Europe / East Asia
 static_web_app_location = "East Asia"
 
+# ----------------------------------------------------------------------------
+# Service Bus / Logic App / Worker（案B: 入口=Logic App, ワーカー=Function）
+# ----------------------------------------------------------------------------
+
+# Service Bus Namespace 名（グローバル一意）
+servicebus_namespace_name = "sbns-funcjobs-dev-seiwan"
+
+# Logic App (Consumption) ワークフロー名
+logic_app_name = "logic-funcjobs-dev-seiwan"
+
+# ワーカーが「重い処理」を模擬するスリープ秒数（0〜60）
+worker_sleep_seconds = 5
+
 # タグ（リソース管理用）
 tags = {
   Environment = "Development"

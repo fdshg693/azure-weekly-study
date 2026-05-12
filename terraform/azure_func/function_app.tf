@@ -51,6 +51,7 @@ resource "azurerm_linux_function_app" "main" {
     # CORS（Cross-Origin Resource Sharing）設定
     # - Azure Portal からの関数テストを許可
     # - Static Web Apps から HTMX 経由で呼び出すドメインを許可
+    # - Logic App から /api/status を呼ぶのは server-side のため CORS は不要
     cors {
       allowed_origins = [
         "https://portal.azure.com",
@@ -80,6 +81,29 @@ resource "azurerm_linux_function_app" "main" {
     # ビルド時にリモートでパッケージを構築する設定
     # true にすると、デプロイ時に requirements.txt から依存関係をインストール
     "SCM_DO_BUILD_DURING_DEPLOYMENT" = "true"
+
+    # ------------------------------------------------------------------
+    # Worker Function（Service Bus トリガー）用の設定
+    # ------------------------------------------------------------------
+    # ServiceBusConnection: Worker の @app.service_bus_queue_trigger(connection=...) と一致させる
+    "ServiceBusConnection" = azurerm_servicebus_namespace_authorization_rule.shared.primary_connection_string
+
+    # ワーカーが「重い処理」を模擬するためのスリープ秒数。
+    # Logic App 側の Until ループは 3 秒 × 60 回 = 最大 3 分の余裕がある
+    "WORKER_SLEEP_SECONDS" = tostring(var.worker_sleep_seconds)
+
+    # ------------------------------------------------------------------
+    # /api/async-random プロキシ（案B）用の Logic App 呼び出し URL
+    # ------------------------------------------------------------------
+    # ブラウザに SAS 署名付き callback URL を露出させずに済むよう、
+    # サーバ側（このプロキシ）にだけ知らせる。
+    #
+    # 循環依存ではない: function_app は callback_url（trigger_http_request の
+    # 作成完了時点で確定）に依存し、logic_app の until_done アクションは
+    # function_app.default_hostname（function_app 作成完了時点で確定）に依存する。
+    # default_hostname は app_settings 更新で変わらないので Terraform は
+    # workflow → trigger → function_app → actions の順で素直に解決できる。
+    "LOGIC_APP_CALLBACK_URL" = azurerm_logic_app_trigger_http_request.request.callback_url
   }
 
   # HTTPS のみ許可（セキュリティ推奨設定）

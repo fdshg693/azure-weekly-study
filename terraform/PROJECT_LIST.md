@@ -19,23 +19,30 @@ Azure App Service を使って最小限の Web サイトをデプロイするシ
 
 ## `azure_func`
 
-Azure Static Web Apps から配信した HTMX ページが、別建ての Azure Functions (Python) を CORS 越しに呼び出して乱数を取得するデモ構成。
+Azure Static Web Apps + HTMX で同期版の乱数 API を叩く構成に加え、**Logic Apps（入口）→ Service Bus（キュー）→ Worker Function（ワーカー）→ Table Storage** の非同期パイプラインを Logic App の `Until` ループで疑似同期 RPC にラップしたデモ構成も含む。
 
 ### 作られるもの
 
 - リソースグループ
-- ストレージアカウント（Function App のランタイム用）
+- ストレージアカウント（Function App ランタイム + Table `results`）
 - App Service Plan（Linux Consumption Plan / Y1 SKU）
-- Linux Function App（Python v2、`/api/random` を ANONYMOUS で公開）
+- Linux Function App（Python v2）
+  - `/api/random` — 同期版（既存）
+  - `worker` — Service Bus キュー `jobs` のトリガー（スリープ → 乱数 → Table 書き込み）
+  - `/api/status` — Logic App の Until がポーリングする結果取得 API
 - Application Insights（監視・ログ）
+- Service Bus Namespace（Basic）+ Queue `jobs` + 認可ルール
+- Logic App (Consumption) — HTTP トリガー → Compose → ServiceBus 送信 → Until → Response
+- ServiceBus 用 API Connection
 - Static Web Apps（Free SKU、HTMX ページを配信）
 
 ### 使われている技術
 
-- **Azure**: Azure Functions, Azure Static Web Apps, Azure Storage, Application Insights
-- **Terraform**: azurerm プロバイダー (~> 3.0)、変数バリデーション、Output のセンシティブ対応、CORS 動的設定
+- **Azure**: Azure Functions, Azure Static Web Apps, Azure Storage（Blob+Table）, Application Insights, **Azure Service Bus**, **Azure Logic Apps (Consumption)**
+- **Terraform**: azurerm プロバイダー (~> 3.0)、`azurerm_logic_app_workflow` + `azurerm_logic_app_action_custom`（Compose / ApiConnection / Until / Response）、`azurerm_api_connection`、`azurerm_servicebus_namespace_authorization_rule`、Output のセンシティブ対応
+- **Functions バインディング**: `service_bus_queue_trigger`、`table_output`、`table_input`（`{Query.jobId}` 動的バインド）
 - **言語/ランタイム**: Python 3.11、HTMX 2.x（CDN）
-- **ツール**: just（コマンドランナー）、Azure Functions Core Tools、SWA CLI
+- **ツール**: just、Azure Functions Core Tools、SWA CLI
 
 ---
 

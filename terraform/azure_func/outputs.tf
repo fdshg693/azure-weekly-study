@@ -36,8 +36,45 @@ output "function_app_url" {
 }
 
 output "function_app_random_url" {
-  description = "乱数生成エンドポイント URL"
+  description = "乱数生成エンドポイント URL（同期版・比較用）"
   value       = "https://${azurerm_linux_function_app.main.default_hostname}/api/random"
+}
+
+output "function_app_status_url" {
+  description = "ステータス確認エンドポイント URL（Logic App の Until がポーリングする先）"
+  value       = "https://${azurerm_linux_function_app.main.default_hostname}/api/status"
+}
+
+output "function_app_async_random_url" {
+  description = "非同期版プロキシ URL（HTMX から叩く先・Logic App を内部で呼ぶ）"
+  value       = "https://${azurerm_linux_function_app.main.default_hostname}/api/async-random"
+}
+
+# ----------------------------------------------------------------------------
+# Service Bus 情報
+# ----------------------------------------------------------------------------
+output "servicebus_namespace_name" {
+  description = "Service Bus Namespace 名"
+  value       = azurerm_servicebus_namespace.main.name
+}
+
+output "servicebus_queue_name" {
+  description = "ジョブ用 Service Bus キュー名"
+  value       = azurerm_servicebus_queue.jobs.name
+}
+
+# ----------------------------------------------------------------------------
+# Logic App 情報（入口）
+# ----------------------------------------------------------------------------
+output "logic_app_name" {
+  description = "Logic App ワークフロー名"
+  value       = azurerm_logic_app_workflow.main.name
+}
+
+output "logic_app_callback_url" {
+  description = "Logic App の HTTP トリガー呼び出し URL（SAS 署名付き・機密）"
+  value       = azurerm_logic_app_trigger_http_request.request.callback_url
+  sensitive   = true
 }
 
 # ----------------------------------------------------------------------------
@@ -112,9 +149,13 @@ output "deploy_command" {
 output "test_command" {
   description = "デプロイ後の動作確認コマンド"
   value       = <<-EOT
-    # === 乱数 API を直接叩く ===
-    curl "https://${azurerm_linux_function_app.main.default_hostname}/api/random"
+    # === 同期版（既存）: 乱数 API を直接叩く ===
     curl "https://${azurerm_linux_function_app.main.default_hostname}/api/random?min=1&max=10"
+
+    # === 非同期版（案B: Logic App → Service Bus → Worker → Table → Until ポーリング）===
+    # callback_url は SAS 署名付きなので terraform output -raw で取り出す
+    $url = terraform output -raw logic_app_callback_url
+    curl.exe -X POST $url -H "Content-Type: application/json" -d '{\"min\":1,\"max\":100}'
 
     # === HTMX ページを開く ===
     start https://${azurerm_static_web_app.main.default_host_name}

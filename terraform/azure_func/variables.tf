@@ -135,6 +135,50 @@ variable "static_web_app_location" {
 }
 
 # ----------------------------------------------------------------------------
+# Service Bus 関連の変数（Logic App の入口 → Worker を繋ぐキュー）
+# ----------------------------------------------------------------------------
+variable "servicebus_namespace_name" {
+  description = <<-EOT
+    Service Bus Namespace の名前（グローバル一意）。
+    Logic App から enqueue され、Worker Function（Service Bus トリガー）が dequeue する。
+    命名規則: 英数字とハイフン、6-50文字、先頭は英字、末尾は英数字。
+  EOT
+  type        = string
+  default     = "sbns-funcjobs-dev-seiwan"
+}
+
+# ----------------------------------------------------------------------------
+# Logic App 関連の変数（入口）
+# ----------------------------------------------------------------------------
+variable "logic_app_name" {
+  description = <<-EOT
+    Logic App (Consumption) ワークフロー名。
+    クライアントから HTTP POST を受け、Service Bus に送って Worker の完了を待ち、
+    結果を返す「同期ラッパー」役。
+  EOT
+  type        = string
+  default     = "logic-funcjobs-dev-seiwan"
+}
+
+# ----------------------------------------------------------------------------
+# Worker（Service Bus トリガーの Function）関連の変数
+# ----------------------------------------------------------------------------
+variable "worker_sleep_seconds" {
+  description = <<-EOT
+    Worker が「重い処理」を模擬するためにスリープする秒数。
+    学習用途：Logic App の Until ポーリングの挙動を観察しやすい値にしてある。
+    大きくし過ぎると Logic App の Until 上限（PT5M / 60 回）にぶつかるので注意。
+  EOT
+  type        = number
+  default     = 5
+
+  validation {
+    condition     = var.worker_sleep_seconds >= 0 && var.worker_sleep_seconds <= 60
+    error_message = "worker_sleep_seconds は 0〜60 の範囲で指定してください。"
+  }
+}
+
+# ----------------------------------------------------------------------------
 # タグ関連の変数
 # ----------------------------------------------------------------------------
 variable "tags" {
