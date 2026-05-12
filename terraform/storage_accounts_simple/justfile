@@ -1,0 +1,76 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+# Terraform variables.tf のデフォルト値と合わせる
+index_html := "index.html"
+error_html := "error.html"
+sample_txt := "sample.txt"
+
+default:
+  @just --list
+
+# ----------------------------------------------------------------------------
+# 初期セットアップ
+# ----------------------------------------------------------------------------
+
+# .example ファイルから実ファイルを生成（既存ファイルは上書きしない）
+setup:
+  @if (-not (Test-Path {{index_html}})) { Copy-Item index.html.example {{index_html}}; Write-Host "Created {{index_html}}" } else { Write-Host "{{index_html}} already exists, skipped" }; if (-not (Test-Path {{error_html}})) { Copy-Item error.html.example {{error_html}}; Write-Host "Created {{error_html}}" } else { Write-Host "{{error_html}} already exists, skipped" }; if (-not (Test-Path {{sample_txt}})) { Copy-Item sample.txt.example {{sample_txt}}; Write-Host "Created {{sample_txt}}" } else { Write-Host "{{sample_txt}} already exists, skipped" }
+
+# ----------------------------------------------------------------------------
+# Terraform
+# ----------------------------------------------------------------------------
+
+# Terraform プロバイダーを初期化
+init:
+  @terraform init
+
+# 変更内容のプレビュー
+plan:
+  @terraform plan
+
+# インフラを作成・更新（確認なし）
+apply:
+  @terraform apply -auto-approve
+
+# インフラを削除（確認なし）
+destroy:
+  @terraform destroy -auto-approve
+
+# 出力値を表示（sensitive は伏字）
+output:
+  @terraform output
+
+# 初回セットアップから apply までまとめて実行
+up: setup init apply
+
+# ----------------------------------------------------------------------------
+# 動作確認
+# ----------------------------------------------------------------------------
+
+# 静的Webサイトの URL を表示
+url:
+  @terraform output -raw static_website_url
+
+# ブラウザで静的Webサイトを開く
+open:
+  @$url = (terraform output -raw static_website_url); Start-Process $url
+
+# 公開ページ（index.html）に HTTP アクセスして応答を確認
+test-public:
+  @$url = (terraform output -raw static_website_url); Write-Host "GET $url"; curl.exe -sI $url
+
+# 存在しないパスへアクセス → error.html が返ることを確認
+test-404:
+  @$url = (terraform output -raw static_website_url) + "no-such-page"; Write-Host "GET $url"; curl.exe -s -o $null -w "HTTP %{http_code}`n" $url; Write-Host "--- body ---"; curl.exe -s $url
+
+# private Blob に「SAS なし」でアクセス → 拒否されることを確認
+test-private-blocked:
+  @$host_name = (terraform output -raw static_website_host) -replace '\.z\.web\.', '.blob.'; $url = "https://$host_name/example-container/sample.txt"; Write-Host "GET $url (no SAS)"; curl.exe -s -o $null -w "HTTP %{http_code}`n" $url
+
+# private Blob の SAS 付き URL を表示
+sas-url:
+  @terraform output -raw blob_url_with_sas
+
+# private Blob に SAS 付きでアクセス → 取得できることを確認
+test-private-sas:
+  @$url = (terraform output -raw blob_url_with_sas); Write-Host "GET (with SAS)"; curl.exe -s -o $null -w "HTTP %{http_code}`n" $url; Write-Host "--- body ---"; curl.exe -s $url

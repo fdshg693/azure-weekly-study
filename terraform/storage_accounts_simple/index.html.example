@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Azure Storage Static Website</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 4rem auto; padding: 0 1rem; color: #222; }
+    h1 { color: #0078d4; }
+    code { background: #f3f3f3; padding: 0.1em 0.3em; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <h1>Hello from Azure Storage Static Website</h1>
+  <p>このページは Azure Storage Account の <code>$web</code> コンテナにアップロードされた <code>index.html</code> です。</p>
+  <p><code>$web</code> コンテナ以外にアップロードしたファイルはこの Web エンドポイント経由では公開されません。</p>
+</body>
+</html>

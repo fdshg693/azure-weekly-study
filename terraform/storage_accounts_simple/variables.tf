@@ -107,3 +107,33 @@ variable "sas_token_expiry" {
   type        = string
   default     = "24h"
 }
+
+# ============================================================================
+# 静的Webサイトホスティング用の変数
+# ============================================================================
+# 以下の2ファイルだけが Web エンドポイント経由で公開される。
+# これ以外のファイルを $web コンテナにアップロードしないこと。
+
+variable "index_document" {
+  description = "静的Webサイトのインデックスドキュメント名（$web コンテナ内のファイル名）"
+  type        = string
+  default     = "index.html"
+}
+
+variable "error_document" {
+  description = "静的Webサイトの 404 エラーページのドキュメント名（$web コンテナ内のファイル名）"
+  type        = string
+  default     = "error.html"
+}
+
+variable "index_html_local_path" {
+  description = "アップロードするローカルの index.html のパス"
+  type        = string
+  default     = "./index.html"
+}
+
+variable "error_html_local_path" {
+  description = "アップロードするローカルの error.html のパス"
+  type        = string
+  default     = "./error.html"
+}

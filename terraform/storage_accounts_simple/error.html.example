@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>404 Not Found</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 4rem auto; padding: 0 1rem; color: #222; text-align: center; }
+    h1 { color: #d83b01; font-size: 4rem; margin-bottom: 0; }
+    p { color: #555; }
+  </style>
+</head>
+<body>
+  <h1>404</h1>
+  <p>お探しのページは見つかりませんでした。</p>
+  <p><a href="/">トップページへ戻る</a></p>
+</body>
+</html>

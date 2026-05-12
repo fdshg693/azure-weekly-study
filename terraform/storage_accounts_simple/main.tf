@@ -92,8 +92,27 @@ resource "azurerm_storage_account" "example" {
   # public_network_access_enabled = true
   
   # allow_nested_items_to_be_public: コンテナやBlobの公開アクセスを許可
-  # セキュリティのため false を推奨（デフォルト: true）
-  # allow_nested_items_to_be_public = false
+  # false にすると、どのコンテナも public-blob / public-container に設定できなくなる。
+  # 静的Webサイト機能は専用の Web エンドポイント経由で $web コンテナを公開する仕組みのため、
+  # この設定を false にしても静的Webサイトは正常に動作する。
+  # → 「index.html / error.html 以外のファイルが絶対に公開されない」ことをこの設定で保証する。
+  allow_nested_items_to_be_public = false
+
+  # ----------------------------------------------------------------------------
+  # 静的Webサイトホスティング
+  # ----------------------------------------------------------------------------
+  # static_website ブロックを定義すると、Storage Account 上で次の動作が有効になる:
+  #   1. $web という特殊コンテナが自動的に作成される
+  #   2. https://<account>.z.web.core.windows.net/ という Web エンドポイントが有効化される
+  #   3. $web コンテナに置いたファイルだけが、上記 Web エンドポイント経由で匿名公開される
+  #   4. 通常の Blob エンドポイント（*.blob.core.windows.net）からは $web も含めて匿名アクセス不可
+  #
+  # index_document: ルート / にアクセスされたときに返すドキュメント
+  # error_404_document: 存在しないパスにアクセスされたときに返すドキュメント
+  static_website {
+    index_document     = var.index_document
+    error_404_document = var.error_document
+  }
   
   # blob_properties: Blobサービスの詳細設定（オプション）
   # blob_properties {
