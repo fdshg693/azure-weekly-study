@@ -1,0 +1,95 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+# ディレクトリ
+reader_dir := "python/reader"
+writer_dir := "python/writer"
+
+default:
+  @just --list
+
+# ----------------------------------------------------------------------------
+# Terraform
+# ----------------------------------------------------------------------------
+
+# Terraform プロバイダーを初期化
+init:
+  @terraform init
+
+# 変更内容のプレビュー
+plan:
+  @terraform plan
+
+# インフラを作成・更新（確認なし）
+apply:
+  @terraform apply -auto-approve
+
+# インフラを削除（確認なし）
+destroy:
+  @terraform destroy -auto-approve
+
+# 出力値を表示
+output:
+  @terraform output
+
+# ----------------------------------------------------------------------------
+# Function App デプロイ（Reader / Writer 個別 + 一括）
+# ----------------------------------------------------------------------------
+
+# Reader Function App に関数コードを発行
+deploy-reader:
+  @$name = terraform output -raw reader_function_app_name; Push-Location {{reader_dir}}; func azure functionapp publish $name --python; Pop-Location
+
+# Writer Function App に関数コードを発行
+deploy-writer:
+  @$name = terraform output -raw writer_function_app_name; Push-Location {{writer_dir}}; func azure functionapp publish $name --python; Pop-Location
+
+# 両方の Function App に関数コードを発行
+deploy: deploy-reader deploy-writer
+
+# インフラ作成 → 関数コード両方デプロイ
+up: apply deploy
+
+# ----------------------------------------------------------------------------
+# 動作確認: Reader
+# ----------------------------------------------------------------------------
+
+# Reader を呼ぶ（初回は 503 が返ることがある — RBAC 反映待ち / KV reference 未解決）
+test-reader:
+  @$url = terraform output -raw reader_function_url; curl.exe -s $url; Write-Host ""
+
+# Reader Function App を再起動（Key Vault references のキャッシュをリセット）
+reader-restart:
+  @$rg = terraform output -raw resource_group_name; $name = terraform output -raw reader_function_app_name; az functionapp restart --resource-group $rg --name $name; Write-Host "restarted: $name"
+
+# ----------------------------------------------------------------------------
+# 動作確認: Writer
+# ----------------------------------------------------------------------------
+
+# Writer の Function キー（default）を表示
+writer-key:
+  @$rg = terraform output -raw resource_group_name; $name = terraform output -raw writer_function_app_name; az functionapp keys list --resource-group $rg --name $name --query functionKeys.default --output tsv
+
+# Writer でシークレットを更新（既定値: "Updated-World"）
+# 例: just test-writer value="Hello-2026"
+test-writer value="Updated-World":
+  @$url = terraform output -raw writer_function_url; $rg = terraform output -raw resource_group_name; $name = terraform output -raw writer_function_app_name; $key = az functionapp keys list --resource-group $rg --name $name --query functionKeys.default --output tsv; curl.exe -s -X POST ($url + '?code=' + $key) -H "Content-Type: application/json" -d ('{\"value\":\"' + '{{value}}' + '\"}'); Write-Host ""
+
+# ----------------------------------------------------------------------------
+# 動作確認: Key Vault 直接
+# ----------------------------------------------------------------------------
+
+# Key Vault 側で現在のシークレット値を確認
+kv-show:
+  @$vault = terraform output -raw key_vault_name; $secret = terraform output -raw secret_name; az keyvault secret show --vault-name $vault --name $secret --query value --output tsv
+
+# Key Vault 側でシークレットのバージョン履歴を確認（Writer 更新の痕跡が見える）
+kv-versions:
+  @$vault = terraform output -raw key_vault_name; $secret = terraform output -raw secret_name; az keyvault secret list-versions --vault-name $vault --name $secret --output table
+
+# ----------------------------------------------------------------------------
+# 一連の動作確認シナリオ
+# ----------------------------------------------------------------------------
+
+# Reader 呼び出し → Writer で更新 → Reader 再起動 → 反映確認 を一気に通す
+demo value="Hello-Demo":
+  @Write-Host "--- 1. Reader (before) ---"; just test-reader; Write-Host "--- 2. Writer updates secret to '{{value}}' ---"; just test-writer value="{{value}}"; Write-Host "--- 3. Key Vault current value ---"; just kv-show; Write-Host "--- 4. Restart reader to refresh KV reference cache ---"; just reader-restart; Write-Host "Waiting 15s for cold start..."; Start-Sleep -Seconds 15; Write-Host "--- 5. Reader (after) ---"; just test-reader
