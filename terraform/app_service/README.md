@@ -155,3 +155,70 @@ npm install; npm start
   - App Registration の **Authentication** に登録した Redirect URI が `https://<web_app_name>.azurewebsites.net/auth/redirect` と完全一致しているか確認 (末尾スラッシュ・大小文字も)
 - **`/profile` で 503「Entra ID 認証が未設定です」**
   - `terraform output` 後、Web App の App Settings に `CLIENT_ID` / `CLIENT_SECRET` / `TENANT_ID` が入っているか `az webapp config appsettings list` で確認
+
+## OBO フロー（`/profile-obo` ページ）
+
+既存 `/profile` はユーザーがサインインして受け取ったデリゲートトークンをそのまま Graph に投げる「直接フロー」。`/profile-obo` は **On-Behalf-Of (OBO) フロー** のデモで、サーバー側でもう一段 Entra にトークン交換リクエストを投げる構成になっている。
+
+```
+[ユーザー]
+    │  サインイン
+    ▼
+[アプリ独自スコープ api://<client-id>/access_as_user のトークン]   ← 初回トークン (aud = アプリ)
+    │  acquireTokenOnBehalfOf
+    ▼
+[Microsoft Graph スコープのトークン]                                  ← OBO 交換後 (aud = Graph)
+    │  /me 呼び出し
+    ▼
+[ユーザー固有データ]
+```
+
+実装は [app/auth_obo.js](app/auth_obo.js)、ビューは [app/views/profile_obo.ejs](app/views/profile_obo.ejs)。MSAL Node の `acquireTokenOnBehalfOf` を使うので axios で `/oauth2/v2.0/token` を直叩きする必要はない。
+
+### App Registration の追加設定（手動）
+
+既存の Entra ID 認証セットアップに加えて以下を実施。
+
+1. **Expose an API**
+   - Application ID URI: `api://<client-id>`（提案値そのまま）
+   - **Add a scope**: `access_as_user`
+     - Who can consent: `Admins and users`
+     - Admin consent display name: 任意（例 `Access app on behalf of user`）
+2. **Expose an API > Authorized client applications**
+   - 自分自身の `<client-id>` を追加し、`access_as_user` スコープにチェック
+   - 同一アプリがクライアント兼ミドルティアとして振る舞うために必要
+3. **Authentication > Redirect URIs** に追加
+   - `https://<web_app_name>.azurewebsites.net/auth/redirect-obo`
+   - ローカル開発する場合は `http://localhost:3000/auth/redirect-obo` も追加
+4. **API permissions** は既存の `Microsoft Graph > Delegated > User.Read` のまま（追加不要）
+
+### テスト方法
+
+`/profile-obo` を開くとサインイン後に以下が画面表示される:
+
+- Graph `/me` のレスポンス
+- **初回トークンのクレーム**（`aud` = `api://<client-id>` または同 GUID）
+- **OBO 交換後トークンのクレーム**（`aud` = `https://graph.microsoft.com` または `00000003-0000-0000-c000-000000000000`）
+
+両者の `aud` が変化していれば OBO が成立している証拠。`scp` も `access_as_user` → `User.Read` に変わる。同時に `console.log` で App Service Log Stream (`just logs`) にも両クレームの JSON が出力される。
+
+「**OBO 失敗テスト**」ボタンを押すと、存在しないリソース `https://nonexistent.invalid/.default` 向けに OBO 交換を試み、Entra が `AADSTS` 系のエラーを返すことを確認できる。これは「リクエストがローカルで弾かれているのではなく実際に Entra に到達している」証拠になる。
+
+### 直接フローとの比較
+
+| 観点 | `/profile`（直接） | `/profile-obo`（OBO） |
+| --- | --- | --- |
+| サインイン時のスコープ | `User.Read` (Graph) | `api://<client-id>/access_as_user` |
+| 初回トークンの aud | Graph | アプリ自身 |
+| サーバー側で Entra に再リクエスト | なし | あり（OBO 交換） |
+| Graph 呼び出しに使うトークン | 初回トークンそのまま | OBO で交換した新トークン |
+| 典型ユースケース | シンプルな単一アプリ | 中間 API が下流 API を叩く 3 層構成 |
+
+### `/profile-obo` トラブルシューティング
+
+- **`AADSTS65001` (consent required)**
+  - `access_as_user` を Authorized client applications に追加していない、または管理者同意が必要なテナント設定。ユーザー個別同意 (Admins and users) で公開しているか確認
+- **`AADSTS500011` (resource not found)**
+  - Application ID URI が `api://<client-id>` で公開されているか、Expose an API のスコープ名が `access_as_user` と一致しているかを確認
+- **OBO 交換は成功するが Graph 呼び出しで 403**
+  - API permissions に `User.Read`（Delegated）が無い、または初回サインイン時に同意していない。一度サインアウトして再サインインで同意画面を出す

@@ -3,6 +3,7 @@ const session = require("express-session");
 const { AzureOpenAI } = require("openai");
 const { getBearerTokenProvider, DefaultAzureCredential } = require("@azure/identity");
 const auth = require("./auth");
+const authObo = require("./auth_obo");
 
 const port = process.env.PORT || 3000;
 const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
@@ -54,6 +55,12 @@ app.get("/auth/signin", auth.signin);
 app.get("/auth/redirect", auth.redirect);
 app.get("/auth/signout", auth.signout);
 app.get("/profile", auth.profile);
+
+// OBO（On-Behalf-Of）フロー: 別エンドポイントで共存
+app.get("/auth/signin-obo", authObo.signin);
+app.get("/auth/redirect-obo", authObo.redirect);
+app.get("/profile-obo", authObo.profile);
+app.post("/profile-obo/fail-test", authObo.failTest);
 
 app.post("/chat", async (req, res) => {
   const history = Array.isArray(req.body?.messages) ? req.body.messages : [];

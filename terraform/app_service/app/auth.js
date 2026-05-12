@@ -128,4 +128,13 @@ async function profile(req, res) {
   }
 }
 
-module.exports = { signin, redirect, signout, profile, isConfigured };
+module.exports = {
+  signin,
+  redirect,
+  signout,
+  profile,
+  isConfigured,
+  msalInstance,
+  CLIENT_ID,
+  GRAPH_API_ENDPOINT,
+};

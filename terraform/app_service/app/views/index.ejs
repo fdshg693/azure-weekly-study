@@ -16,9 +16,11 @@
         <div>
           <% if (typeof signedIn !== "undefined" && signedIn) { %>
             <a href="/profile" class="btn btn-outline-primary btn-sm">プロファイル</a>
+            <a href="/profile-obo" class="btn btn-outline-success btn-sm">プロファイル (OBO)</a>
             <a href="/auth/signout" class="btn btn-outline-danger btn-sm">サインアウト</a>
           <% } else if (typeof authConfigured !== "undefined" && authConfigured) { %>
             <a href="/auth/signin" class="btn btn-outline-primary btn-sm">Entra ID でサインイン</a>
+            <a href="/profile-obo" class="btn btn-outline-success btn-sm">OBO 経由でサインイン</a>
           <% } else { %>
             <a href="/profile" class="btn btn-outline-secondary btn-sm">プロファイル (未設定)</a>
           <% } %>
