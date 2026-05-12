@@ -19,21 +19,23 @@ Azure App Service を使って最小限の Web サイトをデプロイするシ
 
 ## `azure_func`
 
-Azure Functions (Python) をサーバーレスで動かすための構成。
+Azure Static Web Apps から配信した HTMX ページが、別建ての Azure Functions (Python) を CORS 越しに呼び出して乱数を取得するデモ構成。
 
 ### 作られるもの
 
 - リソースグループ
 - ストレージアカウント（Function App のランタイム用）
 - App Service Plan（Linux Consumption Plan / Y1 SKU）
-- Linux Function App（Python v2 プログラミングモデル）
+- Linux Function App（Python v2、`/api/random` を ANONYMOUS で公開）
 - Application Insights（監視・ログ）
+- Static Web Apps（Free SKU、HTMX ページを配信）
 
 ### 使われている技術
 
-- **Azure**: Azure Functions, Azure Storage, Application Insights
-- **Terraform**: azurerm プロバイダー (~> 3.0)、変数バリデーション、Output のセンシティブ対応
-- **言語/ランタイム**: Python 3.11
+- **Azure**: Azure Functions, Azure Static Web Apps, Azure Storage, Application Insights
+- **Terraform**: azurerm プロバイダー (~> 3.0)、変数バリデーション、Output のセンシティブ対応、CORS 動的設定
+- **言語/ランタイム**: Python 3.11、HTMX 2.x（CDN）
+- **ツール**: just（コマンドランナー）、Azure Functions Core Tools、SWA CLI
 
 ---
 

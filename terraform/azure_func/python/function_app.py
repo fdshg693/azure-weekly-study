@@ -1,28 +1,32 @@
 import azure.functions as func  # type: ignore
 import logging
+import random
 
 app = func.FunctionApp()
 
 
-@app.route(route="MyHttpTrigger", auth_level=func.AuthLevel.ANONYMOUS)
-def MyHttpTrigger(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info("Python HTTP trigger function processed a request.")
+@app.route(route="random", auth_level=func.AuthLevel.ANONYMOUS, methods=["GET"])
+def random_number(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("random_number function processed a request.")
 
-    name = req.params.get("name")
-    if not name:
-        try:
-            req_body = req.get_json()
-        except ValueError:
-            pass
-        else:
-            name = req_body.get("name")
+    try:
+        lo = int(req.params.get("min", "1"))
+        hi = int(req.params.get("max", "100"))
+    except ValueError:
+        return func.HttpResponse(
+            "min/max must be integers",
+            status_code=400,
+            mimetype="text/plain",
+        )
 
-    if name:
-        return func.HttpResponse(
-            f"Hello, {name}. This HTTP triggered function executed successfully."
-        )
-    else:
-        return func.HttpResponse(
-            "This HTTP triggered function executed successfully. Pass a name in the query string or in the request body for a personalized response.",
-            status_code=200,
-        )
+    if lo > hi:
+        lo, hi = hi, lo
+
+    value = random.randint(lo, hi)
+
+    # HTMX が innerHTML としてそのまま差し込めるよう HTML 断片で返す
+    return func.HttpResponse(
+        f"<span>{value}</span>",
+        status_code=200,
+        mimetype="text/html",
+    )

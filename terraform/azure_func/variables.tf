@@ -104,16 +104,34 @@ variable "application_insights_name" {
 }
 
 # ----------------------------------------------------------------------------
-# デプロイ関連の変数
+# Static Web Apps 関連の変数
 # ----------------------------------------------------------------------------
-variable "function_app_source_dir" {
+variable "static_web_app_name" {
   description = <<-EOT
-    Azure Functions のソースコードが格納されているディレクトリパス。
-    このディレクトリ内の function_app.py、host.json、requirements.txt 等が
-    Function App にデプロイされます。
+    Azure Static Web Apps の名前（HTMX を配信する静的サイト）。
+    URL の一部になるためグローバル一意である必要があります。
+    例: swa-htmx-dev-seiwan → https://swa-htmx-dev-seiwan-<hash>.<region>.azurestaticapps.net
   EOT
   type        = string
-  default     = "../../azure_func/projects/simple"
+  default     = "swa-htmx-dev-seiwan"
+}
+
+variable "static_web_app_location" {
+  description = <<-EOT
+    Static Web Apps のリージョン。対応リージョンが限定されているため、
+    azurerm Function App 等とは別リージョンになり得ます。
+    対応: West US 2 / Central US / East US 2 / West Europe / East Asia
+  EOT
+  type        = string
+  default     = "East Asia"
+
+  validation {
+    condition = contains(
+      ["West US 2", "Central US", "East US 2", "West Europe", "East Asia"],
+      var.static_web_app_location
+    )
+    error_message = "Static Web Apps のリージョンは West US 2 / Central US / East US 2 / West Europe / East Asia のいずれかを指定してください。"
+  }
 }
 
 # ----------------------------------------------------------------------------

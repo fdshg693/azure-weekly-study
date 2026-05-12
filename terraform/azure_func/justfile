@@ -1,0 +1,83 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+# ディレクトリ・パス
+func_dir := "python"
+web_dist := "web-dist"
+
+default:
+  @just --list
+
+# ----------------------------------------------------------------------------
+# Terraform
+# ----------------------------------------------------------------------------
+
+# Terraform プロバイダーを初期化
+init:
+  @terraform init
+
+# 変更内容のプレビュー
+plan:
+  @terraform plan
+
+# インフラを作成・更新（確認なし）
+apply:
+  @terraform apply -auto-approve
+
+# インフラを削除（確認なし）
+destroy:
+  @terraform destroy -auto-approve
+
+# 出力値を表示
+output:
+  @terraform output
+
+# ----------------------------------------------------------------------------
+# Function App デプロイ
+# ----------------------------------------------------------------------------
+
+# Azure Functions Core Tools で関数コードを Function App に発行
+deploy-func:
+  @$name = terraform output -raw function_app_name; Push-Location {{func_dir}}; func azure functionapp publish $name --python; Pop-Location
+
+# ----------------------------------------------------------------------------
+# Static Web Apps デプロイ
+# ----------------------------------------------------------------------------
+
+# index.html の __FUNCTION_URL__ を terraform output の値で置換し、web-dist/ を作る
+# 中身は scripts/package_web.py に切り出し
+package-web:
+  @python scripts/package_web.py
+
+# SWA CLI で Static Web Apps にデプロイ（事前に: npm i -g @azure/static-web-apps-cli）
+deploy-web: package-web
+  @$token = terraform output -raw static_web_app_api_key; swa deploy {{web_dist}} --deployment-token $token --env production
+
+# ----------------------------------------------------------------------------
+# まとめてデプロイ
+# ----------------------------------------------------------------------------
+
+# Function App と Static Web Apps を両方デプロイ
+deploy: deploy-func deploy-web
+
+# インフラ作成 → アプリ両方デプロイ
+up: apply deploy
+
+# ----------------------------------------------------------------------------
+# 動作確認
+# ----------------------------------------------------------------------------
+
+# Static Web App の URL を表示
+url:
+  @terraform output -raw static_web_app_url
+
+# Function App の乱数エンドポイント URL を表示
+func-url:
+  @terraform output -raw function_app_random_url
+
+# 乱数 API を直接叩く
+test-func:
+  @$url = terraform output -raw function_app_random_url; curl.exe -s $url; Write-Host ""
+
+# ブラウザで HTMX ページを開く
+open:
+  @$url = terraform output -raw static_web_app_url; Start-Process $url

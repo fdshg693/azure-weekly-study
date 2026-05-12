@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>HTMX x Azure Functions 乱数デモ</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      max-width: 480px;
+      margin: 4rem auto;
+      padding: 0 1rem;
+      color: #1f2937;
+    }
+    h1 { font-size: 1.5rem; }
+    button {
+      padding: 0.6rem 1.2rem;
+      font-size: 1rem;
+      cursor: pointer;
+      border: 1px solid #2563eb;
+      background: #2563eb;
+      color: #fff;
+      border-radius: 6px;
+    }
+    button:hover { background: #1d4ed8; }
+    #out {
+      font-size: 3rem;
+      font-weight: 700;
+      margin-top: 1.5rem;
+      min-height: 4rem;
+      color: #2563eb;
+    }
+    .htmx-request #out { opacity: 0.5; }
+    code {
+      background: #f3f4f6;
+      padding: 0.1rem 0.3rem;
+      border-radius: 3px;
+      font-size: 0.85em;
+    }
+  </style>
+</head>
+<body>
+  <h1>Azure Functions x HTMX 乱数デモ</h1>
+  <p>
+    Azure Static Web Apps から配信し、HTMX で Azure Functions の
+    <code>/api/random</code> エンドポイントを呼び出します。
+  </p>
+
+  <button hx-get="__FUNCTION_URL__/api/random"
+          hx-target="#out"
+          hx-swap="innerHTML"
+          hx-trigger="click">
+    乱数を生成
+  </button>
+
+  <div id="out">—</div>
+</body>
+</html>

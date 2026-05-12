@@ -49,9 +49,13 @@ resource "azurerm_linux_function_app" "main" {
     }
 
     # CORS（Cross-Origin Resource Sharing）設定
-    # Azure Portal からの関数テストを許可
+    # - Azure Portal からの関数テストを許可
+    # - Static Web Apps から HTMX 経由で呼び出すドメインを許可
     cors {
-      allowed_origins = ["https://portal.azure.com"]
+      allowed_origins = [
+        "https://portal.azure.com",
+        "https://${azurerm_static_web_app.main.default_host_name}",
+      ]
     }
   }
 

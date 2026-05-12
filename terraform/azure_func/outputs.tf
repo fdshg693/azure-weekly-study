@@ -18,70 +18,70 @@ output "location" {
 }
 
 # ----------------------------------------------------------------------------
-# Function App情報
+# Function App 情報
 # ----------------------------------------------------------------------------
 output "function_app_name" {
-  description = "Function App名"
+  description = "Function App 名"
   value       = azurerm_linux_function_app.main.name
 }
 
 output "function_app_id" {
-  description = "Function AppのリソースID"
+  description = "Function App のリソース ID"
   value       = azurerm_linux_function_app.main.id
 }
 
 output "function_app_url" {
-  description = "Function AppのデフォルトURL"
+  description = "Function App のデフォルト URL"
   value       = "https://${azurerm_linux_function_app.main.default_hostname}"
 }
 
-output "function_app_http_trigger_url" {
-  description = "MyHttpTrigger関数のエンドポイントURL"
-  value       = "https://${azurerm_linux_function_app.main.default_hostname}/api/MyHttpTrigger"
+output "function_app_random_url" {
+  description = "乱数生成エンドポイント URL"
+  value       = "https://${azurerm_linux_function_app.main.default_hostname}/api/random"
 }
 
 # ----------------------------------------------------------------------------
-# Storage Account情報
+# Static Web Apps 情報
 # ----------------------------------------------------------------------------
-output "storage_account_name" {
-  description = "Function App用Storage Account名"
-  value       = azurerm_storage_account.func.name
+output "static_web_app_name" {
+  description = "Static Web App 名"
+  value       = azurerm_static_web_app.main.name
 }
 
-output "storage_account_id" {
-  description = "Storage AccountのリソースID"
-  value       = azurerm_storage_account.func.id
+output "static_web_app_default_host_name" {
+  description = "Static Web App のホスト名"
+  value       = azurerm_static_web_app.main.default_host_name
 }
 
-# ----------------------------------------------------------------------------
-# App Service Plan情報
-# ----------------------------------------------------------------------------
-output "service_plan_name" {
-  description = "App Service Plan名"
-  value       = azurerm_service_plan.func.name
+output "static_web_app_url" {
+  description = "Static Web App の公開 URL"
+  value       = "https://${azurerm_static_web_app.main.default_host_name}"
 }
 
-output "service_plan_id" {
-  description = "App Service PlanのリソースID"
-  value       = azurerm_service_plan.func.id
-}
-
-# ----------------------------------------------------------------------------
-# Application Insights情報
-# ----------------------------------------------------------------------------
-output "application_insights_name" {
-  description = "Application Insights名"
-  value       = azurerm_application_insights.func.name
-}
-
-output "application_insights_instrumentation_key" {
-  description = "Application Insightsのインストルメンテーションキー（機密情報）"
-  value       = azurerm_application_insights.func.instrumentation_key
+output "static_web_app_api_key" {
+  description = "Static Web App のデプロイトークン（swa CLI で使用、機密情報）"
+  value       = azurerm_static_web_app.main.api_key
   sensitive   = true
 }
 
+# ----------------------------------------------------------------------------
+# Storage Account 情報
+# ----------------------------------------------------------------------------
+output "storage_account_name" {
+  description = "Function App 用 Storage Account 名"
+  value       = azurerm_storage_account.func.name
+}
+
+# ----------------------------------------------------------------------------
+# Application Insights 情報
+# ----------------------------------------------------------------------------
+output "application_insights_name" {
+  description = "Application Insights 名"
+  value       = azurerm_application_insights.func.name
+}
+
 output "application_insights_connection_string" {
-  description = "Application Insightsの接続文字列（機密情報）"
+  description = "Application Insights の接続文字列（機密情報）"
   value       = azurerm_application_insights.func.connection_string
   sensitive   = true
 }
@@ -90,40 +90,33 @@ output "application_insights_connection_string" {
 # デプロイ・テスト用のコマンド例
 # ----------------------------------------------------------------------------
 output "deploy_command" {
-  description = "Azure Functions Core Tools を使用したデプロイコマンド"
-  value = <<-EOT
-    # Function App へのデプロイ手順:
+  description = "デプロイコマンド（justfile 経由を推奨）"
+  value       = <<-EOT
+    # === 推奨: just でまとめてデプロイ ===
+    just deploy            # Function App + Static Web App を両方デプロイ
 
-    # 1. Azure Functions Core Tools でデプロイ
-    cd azure_func/projects/simple
-    func azure functionapp publish ${azurerm_linux_function_app.main.name}
+    # === 個別実行 ===
+    just deploy-func       # Function App のみ
+    just deploy-web        # Static Web Apps のみ
 
-    # 2. または Azure CLI でZipデプロイ
-    cd azure_func/projects/simple
-    zip -r deploy.zip . -x "*.pyc" "__pycache__/*" ".venv/*" "tests/*"
-    az functionapp deployment source config-zip \
-      --resource-group ${azurerm_resource_group.main.name} \
-      --name ${azurerm_linux_function_app.main.name} \
-      --src deploy.zip
+    # === 素のコマンドで実行する場合 ===
+    # Function App（Azure Functions Core Tools）
+    cd python
+    func azure functionapp publish ${azurerm_linux_function_app.main.name} --python
+
+    # Static Web Apps（SWA CLI、デプロイトークンは terraform output -raw static_web_app_api_key）
+    swa deploy ./web-dist --deployment-token <TOKEN> --env production
   EOT
 }
 
 output "test_command" {
   description = "デプロイ後の動作確認コマンド"
-  value = <<-EOT
-    # HTTP Trigger の動作確認:
+  value       = <<-EOT
+    # === 乱数 API を直接叩く ===
+    curl "https://${azurerm_linux_function_app.main.default_hostname}/api/random"
+    curl "https://${azurerm_linux_function_app.main.default_hostname}/api/random?min=1&max=10"
 
-    # 1. クエリパラメータでテスト
-    curl "https://${azurerm_linux_function_app.main.default_hostname}/api/MyHttpTrigger?name=Azure"
-
-    # 2. リクエストボディでテスト
-    curl -X POST "https://${azurerm_linux_function_app.main.default_hostname}/api/MyHttpTrigger" \
-      -H "Content-Type: application/json" \
-      -d '{"name": "Azure"}'
-
-    # 3. pytest で統合テストを実行
-    cd azure_func/projects/simple
-    AZURE_FUNCTION_URL="https://${azurerm_linux_function_app.main.default_hostname}" \
-      pytest tests/ -v
+    # === HTMX ページを開く ===
+    start https://${azurerm_static_web_app.main.default_host_name}
   EOT
 }
