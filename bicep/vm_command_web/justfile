@@ -1,0 +1,64 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+default:
+  @just --list
+
+# Create the resource group used for this project.
+group-create resource_group="rg-vmcmdweb" location="japaneast":
+  @az group create --name {{resource_group}} --location {{location}}
+
+# Create a local parameter file from the checked-in example.
+init-local-param:
+  @if (Test-Path main.local.bicepparam) { Write-Host 'main.local.bicepparam already exists.' } else { Copy-Item main.local.bicepparam.example main.local.bicepparam; Write-Host 'Created main.local.bicepparam from example. Fill in functionAppName / functionAppResourceGroup / functionAadClientId / webAadClientId.' }
+
+# Create the Function-side AAD app registration (service-to-service audience).
+aad-create-func display_name="vmcmd-func-aad":
+  @$appId = az ad app create --display-name {{display_name}} --sign-in-audience AzureADMyOrg --query appId -o tsv; az ad app update --id $appId --identifier-uris "api://$appId" | Out-Null; Write-Host "Function AAD clientId: $appId"
+
+# Create the App Service-side AAD app registration (user sign-in). Prints clientId and a fresh client secret.
+aad-create-web app_service_name display_name="vmcmd-web-aad":
+  @$appId = az ad app create --display-name {{display_name}} --sign-in-audience AzureADMyOrg --web-redirect-uris "https://{{app_service_name}}.azurewebsites.net/.auth/login/aad/callback" --enable-id-token-issuance true --query appId -o tsv; $secret = az ad app credential reset --id $appId --query password -o tsv; Write-Host "Web AAD clientId: $appId"; Write-Host "Web AAD secret  : $secret"; Write-Host "Register the secret on the App Service as MICROSOFT_PROVIDER_AUTHENTICATION_SECRET (see 'just set-auth-secret')."
+
+# Deploy the Bicep template with the specified parameter file.
+deploy resource_group="rg-vmcmdweb" param_file="main.bicepparam":
+  @az deployment group create --resource-group {{resource_group}} --template-file main.bicep --parameters {{param_file}}
+
+# Deploy with the local parameter file (main.local.bicepparam).
+deploy-local resource_group="rg-vmcmdweb":
+  @just deploy {{resource_group}} main.local.bicepparam
+
+# Show the deployment output values.
+outputs resource_group="rg-vmcmdweb" deployment_name="main":
+  @$d = az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} | ConvertFrom-Json; [pscustomobject]@{ webAppName = $d.properties.outputs.webAppName.value; webAppUrl = $d.properties.outputs.webAppUrl.value; webAppPrincipalId = $d.properties.outputs.webAppPrincipalId.value } | Format-List
+
+# Register the Web AAD client secret on the App Service (required for Easy Auth).
+set-auth-secret secret resource_group="rg-vmcmdweb" deployment_name="main":
+  @$name = az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} --query properties.outputs.webAppName.value -o tsv; az webapp config appsettings set --resource-group {{resource_group}} --name $name --settings MICROSOFT_PROVIDER_AUTHENTICATION_SECRET={{secret}}
+
+# Install npm dependencies for the SvelteKit app.
+local-install:
+  @Push-Location svelte; try { npm install } finally { Pop-Location }
+
+# Run the SvelteKit app locally (uses your az login for DefaultAzureCredential).
+local-dev:
+  @Push-Location svelte; try { npm run dev } finally { Pop-Location }
+
+# Build the SvelteKit app (adapter-node output in svelte/build/).
+build:
+  @Push-Location svelte; try { npm run build } finally { Pop-Location }
+
+# Build, zip, and deploy the SvelteKit app to the App Service.
+publish resource_group="rg-vmcmdweb" deployment_name="main":
+  @$name = az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} --query properties.outputs.webAppName.value -o tsv; Push-Location svelte; try { npm run build; Copy-Item package.json build/ -Force; if (Test-Path ../app.zip) { Remove-Item ../app.zip -Force }; Compress-Archive -Path build/* -DestinationPath ../app.zip } finally { Pop-Location }; az webapp deploy --resource-group {{resource_group}} --name $name --src-path app.zip --type zip
+
+# Print the deployed Web App URL.
+web-url resource_group="rg-vmcmdweb" deployment_name="main":
+  @az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} --query properties.outputs.webAppUrl.value -o tsv
+
+# Print the App Service System-Assigned MI Object ID (use this for Function Easy Auth allowedPrincipals).
+web-principal-id resource_group="rg-vmcmdweb" deployment_name="main":
+  @az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} --query properties.outputs.webAppPrincipalId.value -o tsv
+
+# Tail App Service logs (Ctrl+C to exit).
+logs resource_group="rg-vmcmdweb" deployment_name="main":
+  @$name = az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} --query properties.outputs.webAppName.value -o tsv; az webapp log tail --resource-group {{resource_group}} --name $name

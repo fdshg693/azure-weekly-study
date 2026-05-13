@@ -1,0 +1,60 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+default:
+  @just --list
+
+# Create the resource group used for this project.
+group-create resource_group="rg-vmcmd" location="japaneast":
+  @az group create --name {{resource_group}} --location {{location}}
+
+# Create a local parameter file from the checked-in example.
+init-local-param:
+  @if (Test-Path main.local.bicepparam) { Write-Host 'main.local.bicepparam already exists.' } else { Copy-Item main.local.bicepparam.example main.local.bicepparam; Write-Host 'Created main.local.bicepparam from example. Edit vmAdminSshPublicKey before deploying.' }
+
+# Deploy the Bicep template with the specified parameter file.
+deploy resource_group="rg-vmcmd" param_file="main.bicepparam":
+  @az deployment group create --resource-group {{resource_group}} --template-file main.bicep --parameters {{param_file}}
+
+# Deploy with the local parameter file (main.local.bicepparam).
+deploy-local resource_group="rg-vmcmd":
+  @just deploy {{resource_group}} main.local.bicepparam
+
+# Show the deployment output values.
+outputs resource_group="rg-vmcmd" deployment_name="main":
+  @$d = az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} | ConvertFrom-Json; [pscustomobject]@{ functionAppName = $d.properties.outputs.functionAppName.value; functionAppUrl = $d.properties.outputs.functionAppUrl.value; targetVmName = $d.properties.outputs.targetVmName.value; storageAccountName = $d.properties.outputs.storageAccountName.value } | Format-List
+
+# Install Python dependencies for local Function development.
+local-install:
+  @Push-Location python; try { pip install -r requirements.txt } finally { Pop-Location }
+
+# Start the Function app locally with Azure Functions Core Tools.
+local-start:
+  @Push-Location python; try { func start } finally { Pop-Location }
+
+# Publish the Function code to the deployed Function App.
+publish resource_group="rg-vmcmd" deployment_name="main":
+  @$name = az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} --query properties.outputs.functionAppName.value -o tsv; Push-Location python; try { func azure functionapp publish $name } finally { Pop-Location }
+
+# Fetch the default function host key (used as ?code= when AuthLevel=FUNCTION).
+function-key resource_group="rg-vmcmd" deployment_name="main":
+  @$name = az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} --query properties.outputs.functionAppName.value -o tsv; az functionapp keys list --resource-group {{resource_group}} --name $name --query functionKeys.default -o tsv
+
+# Print the deployed Function App base URL.
+function-url resource_group="rg-vmcmd" deployment_name="main":
+  @az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} --query properties.outputs.functionAppUrl.value -o tsv
+
+# Show the current VM power state.
+vm-status resource_group="rg-vmcmd" deployment_name="main":
+  @$vm = az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} --query properties.outputs.targetVmName.value -o tsv; az vm get-instance-view --resource-group {{resource_group}} --name $vm --query "instanceView.statuses[?starts_with(code, 'PowerState/')].code | [0]" -o tsv
+
+# Start the target VM (manual override; the Function will normally manage this).
+vm-start resource_group="rg-vmcmd" deployment_name="main":
+  @$vm = az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} --query properties.outputs.targetVmName.value -o tsv; az vm start --resource-group {{resource_group}} --name $vm --no-wait
+
+# Deallocate the target VM (manual override; stops billing).
+vm-stop resource_group="rg-vmcmd" deployment_name="main":
+  @$vm = az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} --query properties.outputs.targetVmName.value -o tsv; az vm deallocate --resource-group {{resource_group}} --name $vm --no-wait
+
+# Tail Function App logs (Ctrl+C to exit).
+logs resource_group="rg-vmcmd" deployment_name="main":
+  @$name = az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} --query properties.outputs.functionAppName.value -o tsv; az webapp log tail --resource-group {{resource_group}} --name $name

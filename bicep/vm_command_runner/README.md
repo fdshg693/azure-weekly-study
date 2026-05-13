@@ -39,29 +39,33 @@ Azure VM (Ubuntu 22.04, Standard_B1s, NSG 全 inbound 拒否)
 ### 1. 前提
 
 - Azure CLI (`az login` 済み)
-- リソースグループ作成済み
 - Azure Functions Core Tools (`func`)
 - SSH 公開鍵 (`~/.ssh/id_rsa.pub` など)
+- (任意) [`just`](https://github.com/casey/just) — `justfile` で典型的なコマンドを簡略化
 
-### 2. パラメータの準備
+### 2. パラメータの準備とデプロイ (just を使う場合)
+
+```pwsh
+just init-local-param        # main.local.bicepparam.example をコピー
+# main.local.bicepparam を編集して vmAdminSshPublicKey を実際の鍵に差し替え
+just group-create            # デフォルト: rg-vmcmd / japaneast
+just deploy-local            # main.local.bicepparam でデプロイ
+just publish                 # Function コードを発行 (functionAppName は outputs から取得)
+```
+
+利用可能なレシピは `just` (引数なし) で一覧表示。
+
+### 2. (代替) 素の az / func を使う場合
 
 ```bash
 cp main.local.bicepparam.example main.local.bicepparam
 # main.local.bicepparam を編集して vmAdminSshPublicKey を実際の鍵に差し替え
-```
 
-### 3. インフラのデプロイ
-
-```bash
 az deployment group create \
   --resource-group <RG名> \
   --template-file main.bicep \
   --parameters main.local.bicepparam
-```
 
-### 4. Function コードのデプロイ
-
-```bash
 cd python
 func azure functionapp publish <デプロイで出力された functionAppName>
 ```
