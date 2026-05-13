@@ -1,0 +1,17 @@
+using './main.bicep'
+
+// ローカル/個人環境用のオーバーライド。
+// このファイルをコピーして main.local.bicepparam を作成し、git にコミットしないこと。
+// .gitignore で main.local.bicepparam が無視される想定。
+
+param prefix = 'vmcmd'
+param pythonVersion = '3.11'
+param servicePlanSku = 'EP1'
+param vmSize = 'Standard_B1s'
+param vmAdminUsername = 'azureuser'
+param idleMinutesBeforeStop = 10
+
+// 実際の SSH 公開鍵 (~/.ssh/id_rsa.pub の内容など) に置換すること。
+// SSH ポートは NSG で塞いでいるため、この鍵で接続することは想定していないが
+// Azure VM 仕様上、Linux VM 作成にパスワードか SSH 鍵のいずれかが必須。
+param vmAdminSshPublicKey = 'ssh-rsa AAAAB3Nza...REPLACE_WITH_YOUR_PUBLIC_KEY... user@host'
