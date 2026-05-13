@@ -69,6 +69,7 @@ var appConfigSettings = [
   { name: 'TARGET_VM_RESOURCE_GROUP', value: targetVmResourceGroup }
   { name: 'STORAGE_ACCOUNT_NAME', value: storageAccountName }
   { name: 'STORAGE_TABLE_NAME', value: 'vmstate' }
+  { name: 'STORAGE_LOG_TABLE_NAME', value: 'vmlog' }
   { name: 'IDLE_MINUTES_BEFORE_STOP', value: string(idleMinutesBeforeStop) }
   { name: 'SUBSCRIPTION_ID', value: subscription().subscriptionId }
 ]

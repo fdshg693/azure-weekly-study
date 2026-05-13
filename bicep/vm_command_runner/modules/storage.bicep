@@ -32,5 +32,11 @@ resource stateTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023
   name: 'vmstate'
 }
 
+// 実行履歴ログを保存する Table。
+resource logTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-05-01' = {
+  parent: tableService
+  name: 'vmlog'
+}
+
 output storageAccountName string = storage.name
 output storageAccountId string = storage.id

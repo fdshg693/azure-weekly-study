@@ -77,6 +77,18 @@ Content-Type: application/json
 { "command": "uptime" }
 ```
 
+> **注**: コードは現在 `AuthLevel.ANONYMOUS` でデプロイされる。`vm_command_web` をデプロイすると Function 側に Easy Auth (AAD) が被さり、App Service の MI 以外からは 401 になる。Web UI 経由で操作する場合は [`vm_command_web`](../vm_command_web/README.md) を参照。
+
+## エンドポイント一覧
+
+| Method | Path | 用途 |
+|---|---|---|
+| POST | `/api/run` | ホワイトリスト済み alias を実行 |
+| GET  | `/api/status` | 電源状態 / 最終アクセス / 許可コマンド一覧 |
+| POST | `/api/start` | VM を手動起動 (begin_start) |
+| POST | `/api/stop`  | VM を手動停止 (begin_deallocate) |
+| GET  | `/api/logs?limit=N` | 直近の実行履歴 (デフォルト 50, 最大 200) |
+
 ### 許可されているコマンド (alias)
 
 | alias | 実行内容 |
