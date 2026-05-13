@@ -20,39 +20,10 @@ param azureOpenAiSubscriptionName string = 'azure-openai-default-subscription'
 var azureOpenAiServiceUrl = '${azureOpenAiEndpoint}/openai'
 
 // APIM の System-Assigned Managed Identity で AOAI を呼ぶ。AOAI 側で disableLocalAuth:true としているため key 認証は不可。
-// authentication-managed-identity は Microsoft Entra から取得したトークンを Authorization: Bearer ヘッダーに付与する。
-var azureOpenAiPolicyXml = '<policies><inbound><base /><authentication-managed-identity resource="https://cognitiveservices.azure.com" /></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+// authentication-managed-identity は Entra から取得したトークンを Authorization: Bearer に付与する。
+var azureOpenAiPolicyXml = loadTextContent('./aoai-api.policy.xml')
 
-var azureOpenAiOperations = [
-  {
-    name: 'chat-completions'
-    displayName: 'Chat completions'
-    method: 'POST'
-    urlTemplate: '/deployments/{deploymentId}/chat/completions'
-    description: 'Proxy Azure OpenAI chat completions.'
-    templateParameters: [
-      {
-        name: 'deploymentId'
-        type: 'string'
-        required: true
-      }
-    ]
-  }
-  {
-    name: 'embeddings'
-    displayName: 'Embeddings'
-    method: 'POST'
-    urlTemplate: '/deployments/{deploymentId}/embeddings'
-    description: 'Proxy Azure OpenAI embeddings.'
-    templateParameters: [
-      {
-        name: 'deploymentId'
-        type: 'string'
-        required: true
-      }
-    ]
-  }
-]
+var azureOpenAiOperations = loadJsonContent('./aoai-api.operations.json')
 
 resource apiManagement 'Microsoft.ApiManagement/service@2022-08-01' existing = {
   name: apimServiceName
@@ -65,9 +36,7 @@ resource azureOpenAiApi 'Microsoft.ApiManagement/service/apis@2022-08-01' = {
     displayName: 'Azure OpenAI API'
     description: 'Azure OpenAI backend protected by APIM subscription key.'
     path: azureOpenAiApiPath
-    protocols: [
-      'https'
-    ]
+    protocols: ['https']
     serviceUrl: azureOpenAiServiceUrl
     subscriptionRequired: true
     subscriptionKeyParameterNames: {
@@ -99,9 +68,7 @@ resource azureOpenAiApiPolicy 'Microsoft.ApiManagement/service/apis/policies@202
     format: 'xml'
     value: azureOpenAiPolicyXml
   }
-  dependsOn: [
-    azureOpenAiOperationsResource
-  ]
+  dependsOn: [azureOpenAiOperationsResource]
 }
 
 resource azureOpenAiProduct 'Microsoft.ApiManagement/service/products@2022-08-01' = {

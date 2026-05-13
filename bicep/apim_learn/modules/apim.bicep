@@ -28,33 +28,26 @@ param enableAzureOpenAiApi bool = false
 @description('Azure OpenAI リソースのエンドポイント。末尾の / は付けずに指定してください。例: https://example.openai.azure.com')
 param azureOpenAiEndpoint string = ''
 
-@description('CRUD API 名')
-param crudApiName string = 'crud-api'
+// API 名・パス・Product 名・Subscription 名は学習サンプル用の固定値。
+// 上書きが必要なケースは現状ないので param ではなく var に置く。
+var apiNames = {
+  crud: {
+    api: 'crud-api'
+    path: 'crud'
+    product: 'crud-product'
+    subscription: 'crud-default-subscription'
+  }
+  aoai: {
+    api: 'azure-openai-api'
+    path: 'aoai'
+    product: 'azure-openai-product'
+    subscription: 'azure-openai-default-subscription'
+  }
+}
 
-@description('CRUD API の公開パス')
-param crudApiPath string = 'crud'
+var apimBackendSecretNamedValueName = 'function-backend-secret'
 
-@description('CRUD API を束ねる Product 名')
-param crudProductName string = 'crud-product'
-
-@description('CRUD API 用の既定 Subscription 名')
-param crudSubscriptionName string = 'crud-default-subscription'
-
-@description('CRUD バックエンド認証シークレットを保持する named value 名')
-param apimBackendSecretNamedValueName string = 'function-backend-secret'
-
-@description('Azure OpenAI API 名')
-param azureOpenAiApiName string = 'azure-openai-api'
-
-@description('Azure OpenAI API の公開パス')
-param azureOpenAiApiPath string = 'aoai'
-
-@description('Azure OpenAI API を束ねる Product 名')
-param azureOpenAiProductName string = 'azure-openai-product'
-
-@description('Azure OpenAI API 用の既定 Subscription 名')
-param azureOpenAiSubscriptionName string = 'azure-openai-default-subscription'
-
+// Consumption は capacity=0 固定、それ以外は 1 ユニット。
 var apimSkuCapacity = apimSkuName == 'Consumption' ? 0 : 1
 
 // APIM は System-Assigned Managed Identity を使って Key Vault からシークレットを取得し、
@@ -89,10 +82,7 @@ resource apimBackendSecret 'Microsoft.ApiManagement/service/namedValues@2022-08-
     keyVault: {
       secretIdentifier: backendSecretUri
     }
-    tags: [
-      'backend'
-      'function'
-    ]
+    tags: ['backend', 'function']
   }
 }
 
@@ -101,10 +91,10 @@ module crudApi './apim-crud-api.bicep' = {
   params: {
     apimServiceName: apiManagement.name
     functionDefaultHostName: functionDefaultHostName
-    crudApiName: crudApiName
-    crudApiPath: crudApiPath
-    crudProductName: crudProductName
-    crudSubscriptionName: crudSubscriptionName
+    crudApiName: apiNames.crud.api
+    crudApiPath: apiNames.crud.path
+    crudProductName: apiNames.crud.product
+    crudSubscriptionName: apiNames.crud.subscription
     backendSecretNamedValueName: apimBackendSecret.name
   }
 }
@@ -114,10 +104,10 @@ module azureOpenAiApi './apim-aoai-api.bicep' = if (enableAzureOpenAiApi) {
   params: {
     apimServiceName: apiManagement.name
     azureOpenAiEndpoint: azureOpenAiEndpoint
-    azureOpenAiApiName: azureOpenAiApiName
-    azureOpenAiApiPath: azureOpenAiApiPath
-    azureOpenAiProductName: azureOpenAiProductName
-    azureOpenAiSubscriptionName: azureOpenAiSubscriptionName
+    azureOpenAiApiName: apiNames.aoai.api
+    azureOpenAiApiPath: apiNames.aoai.path
+    azureOpenAiProductName: apiNames.aoai.product
+    azureOpenAiSubscriptionName: apiNames.aoai.subscription
   }
 }
 

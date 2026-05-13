@@ -1,0 +1,30 @@
+[
+  {
+    "name": "chat-completions",
+    "displayName": "Chat completions",
+    "method": "POST",
+    "urlTemplate": "/deployments/{deploymentId}/chat/completions",
+    "description": "Proxy Azure OpenAI chat completions.",
+    "templateParameters": [
+      {
+        "name": "deploymentId",
+        "type": "string",
+        "required": true
+      }
+    ]
+  },
+  {
+    "name": "embeddings",
+    "displayName": "Embeddings",
+    "method": "POST",
+    "urlTemplate": "/deployments/{deploymentId}/embeddings",
+    "description": "Proxy Azure OpenAI embeddings.",
+    "templateParameters": [
+      {
+        "name": "deploymentId",
+        "type": "string",
+        "required": true
+      }
+    ]
+  }
+]

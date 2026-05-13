@@ -29,15 +29,15 @@ param prefix string = 'apimlearn'
 @description('一意性を確保するためのサフィックス')
 param suffix string = uniqueString(resourceGroup().id)
 
-@description('Python ランタイムのバージョン（3.9, 3.10, 3.11, 3.12, 3.13）')
+@description('Python ランタイムのバージョン')
 @allowed(['3.9', '3.10', '3.11', '3.12', '3.13'])
 param pythonVersion string = '3.11'
 
-@description('App Service Plan の SKU。Identity-based AzureWebJobsStorage は Premium (EP*) 以上が必要なため、デフォルトを EP1 に設定。Y1 (Consumption) を選んだ場合は Storage 接続が key 認証にフォールバックする必要があるが、本テンプレートでは未対応。')
+@description('App Service Plan の SKU。Identity-based AzureWebJobsStorage は Premium (EP*) 以上が必要なため、デフォルトは EP1。Y1 (Consumption) は未対応。')
 @allowed(['Y1', 'EP1', 'EP2', 'EP3', 'B1'])
 param servicePlanSku string = 'EP1'
 
-@description('API Management の SKU（サンプル用途では Consumption を推奨）')
+@description('API Management の SKU')
 @allowed(['Consumption', 'Developer', 'BasicV2', 'StandardV2'])
 param apimSkuName string = 'Developer'
 
@@ -58,49 +58,42 @@ param tags object = {
 param publishFunctionCode bool = true
 
 @secure()
-@description('APIM と Function App 間で共有するバックエンド認証シークレット。Key Vault に格納されます。未指定時はデプロイ時に自動生成（newGuid）されますが、本番では bicepparam の az.getSecret() で受け渡しを推奨。')
+@description('APIM と Function App 間で共有するバックエンド認証シークレット。Key Vault に格納される。未指定時はデプロイ時に自動生成（newGuid）。本番では bicepparam の az.getSecret() で受け渡しを推奨。')
 param backendSharedSecret string = newGuid()
 
 @description('Azure OpenAI を新規作成し、APIM 配下の別 API として公開するか')
 param enableAzureOpenAiApi bool = false
 
-@description('Azure OpenAI をデプロイするリージョン。モデル可用性に応じて変更してください')
-param azureOpenAiLocation string = location
-
-@description('Azure OpenAI モデルデプロイ名')
-param azureOpenAiDeploymentName string = 'gpt-4o-mini'
-
-@description('Azure OpenAI にデプロイするモデル名')
-param azureOpenAiModelName string = 'gpt-4o-mini'
-
-@description('Azure OpenAI モデルバージョン。空文字の場合は Azure の既定バージョンを利用します')
-param azureOpenAiModelVersion string = ''
-
-@description('Azure OpenAI モデルデプロイの SKU')
-@allowed(['Standard', 'GlobalStandard', 'GlobalBatch'])
-param azureOpenAiDeploymentSkuName string = 'Standard'
-
-@description('Azure OpenAI モデルデプロイの容量。利用可能な値はモデルと SKU に依存します')
-@minValue(1)
-param azureOpenAiDeploymentCapacity int = 10
-
-@description('Azure OpenAI モデルの自動アップグレード方針')
-@allowed(['NoAutoUpgrade', 'OnceCurrentVersionExpired', 'OnceNewDefaultVersionAvailable'])
-param azureOpenAiVersionUpgradeOption string = 'OnceNewDefaultVersionAvailable'
+@description('Azure OpenAI 関連の設定をまとめたオブジェクト。enableAzureOpenAiApi=true のときのみ使用される。')
+param azureOpenAi object = {
+  location: location
+  deploymentName: 'gpt-4o-mini'
+  modelName: 'gpt-4o-mini'
+  modelVersion: ''
+  deploymentSkuName: 'Standard'
+  deploymentCapacity: 10
+  versionUpgradeOption: 'OnceNewDefaultVersionAvailable'
+}
 
 // ============================================================================
 // 名前とコード定義
 // ============================================================================
-var functionAppName = 'func-${prefix}-${suffix}'
-var apimServiceName = 'apim-${prefix}-${take(suffix, 8)}'
-var azureOpenAiAccountName = 'aoai-${prefix}-${take(suffix, 8)}'
-// Key Vault 名は 3-24 文字、英数字とハイフンのみ。プレフィックスとサフィックスから生成。
-var keyVaultName = take('kv-${prefix}-${take(suffix, 8)}', 24)
-var functionAppSource = loadTextContent('python/function_app.py')
-var hostJsonContent = loadTextContent('python/host.json')
-var requirementsTxtContent = loadTextContent('python/requirements.txt')
-var functionCodeHash = uniqueString(functionAppSource, hostJsonContent, requirementsTxtContent, pythonVersion)
-var deployPythonScript = loadTextContent('scripts/deploy_function_code.py')
+var resourceNames = {
+  functionApp: 'func-${prefix}-${suffix}'
+  apim: 'apim-${prefix}-${take(suffix, 8)}'
+  azureOpenAi: 'aoai-${prefix}-${take(suffix, 8)}'
+  // Key Vault 名は 3-24 文字、英数字とハイフンのみ
+  keyVault: take('kv-${prefix}-${take(suffix, 8)}', 24)
+}
+
+// Function コード一式（zip deploy 用）
+var functionCode = {
+  source: loadTextContent('python/function_app.py')
+  hostJson: loadTextContent('python/host.json')
+  requirements: loadTextContent('python/requirements.txt')
+  deployScript: loadTextContent('scripts/deploy_function_code.py')
+}
+var functionCodeHash = uniqueString(functionCode.source, functionCode.hostJson, functionCode.requirements, pythonVersion)
 
 // ============================================================================
 // モジュール
@@ -116,29 +109,29 @@ module core './modules/core.bicep' = {
   }
 }
 
-// Key Vault は Function App / APIM より先に作成しておく（URI を双方へ渡すため）。
+// Key Vault は Function App / APIM より先に作成しておく（URI を双方へ渡すため）
 module keyVault './modules/key-vault.bicep' = {
   name: 'keyVaultResources'
   params: {
     location: location
-    keyVaultName: keyVaultName
+    keyVaultName: resourceNames.keyVault
     backendSharedSecret: backendSharedSecret
     tags: tags
   }
 }
 
-module azureOpenAi './modules/azure-openai.bicep' = {
+module azureOpenAiModule './modules/azure-openai.bicep' = {
   name: 'azureOpenAiResources'
   params: {
-    location: azureOpenAiLocation
-    azureOpenAiAccountName: azureOpenAiAccountName
+    location: azureOpenAi.location
+    azureOpenAiAccountName: resourceNames.azureOpenAi
     enableAzureOpenAiApi: enableAzureOpenAiApi
-    azureOpenAiDeploymentName: azureOpenAiDeploymentName
-    azureOpenAiModelName: azureOpenAiModelName
-    azureOpenAiModelVersion: azureOpenAiModelVersion
-    azureOpenAiDeploymentSkuName: azureOpenAiDeploymentSkuName
-    azureOpenAiDeploymentCapacity: azureOpenAiDeploymentCapacity
-    azureOpenAiVersionUpgradeOption: azureOpenAiVersionUpgradeOption
+    azureOpenAiDeploymentName: azureOpenAi.deploymentName
+    azureOpenAiModelName: azureOpenAi.modelName
+    azureOpenAiModelVersion: azureOpenAi.modelVersion
+    azureOpenAiDeploymentSkuName: azureOpenAi.deploymentSkuName
+    azureOpenAiDeploymentCapacity: azureOpenAi.deploymentCapacity
+    azureOpenAiVersionUpgradeOption: azureOpenAi.versionUpgradeOption
     tags: tags
   }
 }
@@ -147,7 +140,7 @@ module functionApp './modules/function-app.bicep' = {
   name: 'functionAppResources'
   params: {
     location: location
-    functionAppName: functionAppName
+    functionAppName: resourceNames.functionApp
     servicePlanId: core.outputs.servicePlanId
     storageAccountName: core.outputs.storageAccountName
     pythonVersion: pythonVersion
@@ -160,7 +153,7 @@ module apim './modules/apim.bicep' = {
   name: 'apiManagementResources'
   params: {
     location: location
-    apimServiceName: apimServiceName
+    apimServiceName: resourceNames.apim
     apimSkuName: apimSkuName
     apimPublisherName: apimPublisherName
     apimPublisherEmail: apimPublisherEmail
@@ -168,11 +161,11 @@ module apim './modules/apim.bicep' = {
     tags: tags
     backendSecretUri: keyVault.outputs.backendSecretUri
     enableAzureOpenAiApi: enableAzureOpenAiApi
-    azureOpenAiEndpoint: azureOpenAi.outputs.azureOpenAiEndpoint
+    azureOpenAiEndpoint: azureOpenAiModule.outputs.azureOpenAiEndpoint
   }
 }
 
-// ロール割り当ては Function App と APIM の MI が確定してから一括で行う。
+// ロール割り当ては Function App と APIM の MI が確定してから一括で行う
 module roleAssignments './modules/role-assignments.bicep' = {
   name: 'roleAssignments'
   params: {
@@ -181,7 +174,7 @@ module roleAssignments './modules/role-assignments.bicep' = {
     functionAppPrincipalId: functionApp.outputs.functionAppPrincipalId
     apimPrincipalId: apim.outputs.apimPrincipalId
     enableAzureOpenAiApi: enableAzureOpenAiApi
-    azureOpenAiAccountName: azureOpenAi.outputs.azureOpenAiAccountName
+    azureOpenAiAccountName: azureOpenAiModule.outputs.azureOpenAiAccountName
   }
 }
 
@@ -193,10 +186,10 @@ module functionCodeDeployment './modules/function-code-deployment.bicep' = {
     location: location
     publishFunctionCode: publishFunctionCode
     functionAppName: functionApp.outputs.functionAppName
-    functionAppSource: functionAppSource
-    hostJsonContent: hostJsonContent
-    requirementsTxtContent: requirementsTxtContent
-    deployPythonScript: deployPythonScript
+    functionAppSource: functionCode.source
+    hostJsonContent: functionCode.hostJson
+    requirementsTxtContent: functionCode.requirements
+    deployPythonScript: functionCode.deployScript
     functionCodeHash: functionCodeHash
   }
   dependsOn: [
@@ -207,6 +200,11 @@ module functionCodeDeployment './modules/function-code-deployment.bicep' = {
 // ============================================================================
 // 出力
 // ============================================================================
+
+// APIM サブスクリプションキー取得用の az CLI コマンドテンプレート
+var listSecretsUriBase = '${environment().resourceManager}subscriptions/$(az account show --query id -o tsv)/resourceGroups/${resourceGroup().name}/providers/Microsoft.ApiManagement/service/${apim.outputs.apimServiceName}/subscriptions'
+var apiKeyCommandTemplate = 'az rest --method post --uri "${listSecretsUriBase}/{0}/listSecrets?api-version=2024-05-01"'
+
 @description('Function App の名前')
 output functionAppName string = functionApp.outputs.functionAppName
 
@@ -229,22 +227,22 @@ output apiBaseUrl string = apim.outputs.apiBaseUrl
 output azureOpenAiApiBaseUrl string = apim.outputs.azureOpenAiApiBaseUrl
 
 @description('Azure OpenAI リソース名。未有効時は空文字')
-output azureOpenAiAccountName string = azureOpenAi.outputs.azureOpenAiAccountName
+output azureOpenAiAccountName string = azureOpenAiModule.outputs.azureOpenAiAccountName
 
 @description('Azure OpenAI リソースのエンドポイント。未有効時は空文字')
-output azureOpenAiEndpoint string = azureOpenAi.outputs.azureOpenAiEndpoint
+output azureOpenAiEndpoint string = azureOpenAiModule.outputs.azureOpenAiEndpoint
 
 @description('Azure OpenAI モデルデプロイ名。未有効時は空文字')
-output azureOpenAiDeploymentName string = azureOpenAi.outputs.azureOpenAiDeploymentName
+output azureOpenAiDeploymentName string = azureOpenAiModule.outputs.azureOpenAiDeploymentName
 
 @description('利用者が送る API キーのヘッダー名')
 output apiKeyHeaderName string = apim.outputs.apiKeyHeaderName
 
 @description('APIM サブスクリプションキーを取得する Azure CLI コマンド')
-output apiKeyCommand string = 'az rest --method post --uri "${environment().resourceManager}subscriptions/$(az account show --query id -o tsv)/resourceGroups/${resourceGroup().name}/providers/Microsoft.ApiManagement/service/${apim.outputs.apimServiceName}/subscriptions/${apim.outputs.apimSubscriptionName}/listSecrets?api-version=2024-05-01"'
+output apiKeyCommand string = replace(apiKeyCommandTemplate, '{0}', apim.outputs.apimSubscriptionName)
 
 @description('Azure OpenAI 用 APIM サブスクリプションキーを取得する Azure CLI コマンド。未有効時は空文字')
-output azureOpenAiApiKeyCommand string = enableAzureOpenAiApi ? 'az rest --method post --uri "${environment().resourceManager}subscriptions/$(az account show --query id -o tsv)/resourceGroups/${resourceGroup().name}/providers/Microsoft.ApiManagement/service/${apim.outputs.apimServiceName}/subscriptions/${apim.outputs.azureOpenAiApimSubscriptionName}/listSecrets?api-version=2024-05-01"' : ''
+output azureOpenAiApiKeyCommand string = enableAzureOpenAiApi ? replace(apiKeyCommandTemplate, '{0}', apim.outputs.azureOpenAiApimSubscriptionName) : ''
 
 @description('Storage Account の名前')
 output storageAccountName string = core.outputs.storageAccountName
