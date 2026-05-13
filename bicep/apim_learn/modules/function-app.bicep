@@ -16,9 +16,8 @@ param pythonVersion string
 @description('リソースに適用するタグ')
 param tags object
 
-@secure()
-@description('APIM と Function App 間で共有するバックエンド認証シークレット')
-param backendSharedSecret string
+@description('BACKEND_SHARED_SECRET を格納している Key Vault シークレットの URI (versionless)')
+param backendSecretUri string
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
   name: storageAccountName
@@ -28,9 +27,13 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   name: functionAppName
   location: location
   kind: 'functionapp,linux'
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
     serverFarmId: servicePlanId
     httpsOnly: true
+    keyVaultReferenceIdentity: 'SystemAssigned'
     siteConfig: {
       linuxFxVersion: 'Python|${pythonVersion}'
       appSettings: [
@@ -46,17 +49,41 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           name: 'AzureWebJobsFeatureFlags'
           value: 'EnableWorkerIndexing'
         }
+        // identity-based connection: ホストランタイムは Managed Identity で Storage を呼ぶ。
+        // Connection string / アカウントキーはアプリ設定に存在しない。
         {
-          name: 'AzureWebJobsStorage'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${storageAccount.listKeys().keys[0].value}'
+          name: 'AzureWebJobsStorage__accountName'
+          value: storageAccount.name
         }
         {
-          name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${storageAccount.listKeys().keys[0].value}'
+          name: 'AzureWebJobsStorage__credential'
+          value: 'managedidentity'
+        }
+        {
+          name: 'AzureWebJobsStorage__blobServiceUri'
+          value: storageAccount.properties.primaryEndpoints.blob
+        }
+        {
+          name: 'AzureWebJobsStorage__queueServiceUri'
+          value: storageAccount.properties.primaryEndpoints.queue
+        }
+        {
+          name: 'AzureWebJobsStorage__tableServiceUri'
+          value: storageAccount.properties.primaryEndpoints.table
+        }
+        // Premium プランの content share も identity-based に統一。
+        // 別途 Storage File Data SMB Share Contributor ロールが必要。
+        {
+          name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING__accountName'
+          value: storageAccount.name
+        }
+        {
+          name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING__credential'
+          value: 'managedidentity'
         }
         {
           name: 'WEBSITE_CONTENTSHARE'
-          value: functionAppName
+          value: toLower(functionAppName)
         }
         {
           name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
@@ -66,9 +93,10 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           name: 'ENABLE_ORYX_BUILD'
           value: 'true'
         }
+        // BACKEND_SHARED_SECRET は Key Vault に格納し、Function App は Managed Identity で取り出す。
         {
           name: 'BACKEND_SHARED_SECRET'
-          value: backendSharedSecret
+          value: '@Microsoft.KeyVault(SecretUri=${backendSecretUri})'
         }
       ]
       cors: {
@@ -84,3 +112,4 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
 output functionAppName string = functionApp.name
 output functionDefaultHostName string = functionApp.properties.defaultHostName
 output functionAppUrl string = 'https://${functionApp.properties.defaultHostName}'
+output functionAppPrincipalId string = functionApp.identity.principalId

@@ -62,7 +62,8 @@ resource azureOpenAiAccount 'Microsoft.CognitiveServices/accounts@2025-12-01' = 
   }
   properties: {
     customSubDomainName: azureOpenAiCustomSubdomain
-    disableLocalAuth: false
+    // APIM は Managed Identity で AOAI を呼ぶため、key 認証ルートを物理的に閉じる。
+    disableLocalAuth: true
     dynamicThrottlingEnabled: false
     publicNetworkAccess: 'Enabled'
     restrictOutboundNetworkAccess: false
@@ -88,5 +89,3 @@ resource azureOpenAiDeployment 'Microsoft.CognitiveServices/accounts/deployments
 output azureOpenAiAccountName string = enableAzureOpenAiApi ? azureOpenAiAccount.name : ''
 output azureOpenAiEndpoint string = enableAzureOpenAiApi ? 'https://${azureOpenAiAccount.name}.openai.azure.com' : ''
 output azureOpenAiDeploymentName string = enableAzureOpenAiApi ? azureOpenAiDeployment.name : ''
-@secure()
-output azureOpenAiApiKey string = enableAzureOpenAiApi ? azureOpenAiAccount!.listKeys().key1 : ''

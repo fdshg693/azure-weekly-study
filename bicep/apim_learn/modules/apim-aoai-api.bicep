@@ -4,9 +4,6 @@ param apimServiceName string
 @description('Azure OpenAI リソースのエンドポイント。例: https://example.openai.azure.com')
 param azureOpenAiEndpoint string
 
-@description('AOAI バックエンドの API キーを格納した named value 名')
-param azureOpenAiApiKeyNamedValueName string = 'azure-openai-api-key'
-
 @description('Azure OpenAI API 名')
 param azureOpenAiApiName string = 'azure-openai-api'
 
@@ -22,8 +19,9 @@ param azureOpenAiSubscriptionName string = 'azure-openai-default-subscription'
 // APIM の backend serviceUrl には /openai 付きのベース URL を渡す。
 var azureOpenAiServiceUrl = '${azureOpenAiEndpoint}/openai'
 
-// クライアントから AOAI の秘密情報は見せず、APIM が named value を使って中継する。
-var azureOpenAiPolicyXml = '<policies><inbound><base /><set-header name="api-key" exists-action="override"><value>{{${azureOpenAiApiKeyNamedValueName}}}</value></set-header></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+// APIM の System-Assigned Managed Identity で AOAI を呼ぶ。AOAI 側で disableLocalAuth:true としているため key 認証は不可。
+// authentication-managed-identity は Microsoft Entra から取得したトークンを Authorization: Bearer ヘッダーに付与する。
+var azureOpenAiPolicyXml = '<policies><inbound><base /><authentication-managed-identity resource="https://cognitiveservices.azure.com" /></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
 
 var azureOpenAiOperations = [
   {

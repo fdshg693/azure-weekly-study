@@ -19,19 +19,14 @@ param functionDefaultHostName string
 @description('リソースに適用するタグ')
 param tags object
 
-@secure()
-@description('APIM から Function App へ送るバックエンド認証シークレット')
-param backendSharedSecret string
+@description('BACKEND_SHARED_SECRET を保持する Key Vault シークレットの versionless URI')
+param backendSecretUri string
 
 @description('Azure OpenAI バックエンドを APIM 配下の別 API として公開するか')
 param enableAzureOpenAiApi bool = false
 
 @description('Azure OpenAI リソースのエンドポイント。末尾の / は付けずに指定してください。例: https://example.openai.azure.com')
 param azureOpenAiEndpoint string = ''
-
-@secure()
-@description('Azure OpenAI リソースの API キー')
-param azureOpenAiApiKey string = ''
 
 @description('CRUD API 名')
 param crudApiName string = 'crud-api'
@@ -60,16 +55,16 @@ param azureOpenAiProductName string = 'azure-openai-product'
 @description('Azure OpenAI API 用の既定 Subscription 名')
 param azureOpenAiSubscriptionName string = 'azure-openai-default-subscription'
 
-@description('AOAI バックエンド API キーを保持する named value 名')
-param azureOpenAiApiKeyNamedValueName string = 'azure-openai-api-key'
-
 var apimSkuCapacity = apimSkuName == 'Consumption' ? 0 : 1
 
-// このモジュールは APIM 本体と共有シークレットだけを管理する。
-// 各 API の詳細定義は子モジュールに分割し、読みやすさを優先する。
+// APIM は System-Assigned Managed Identity を使って Key Vault からシークレットを取得し、
+// AOAI バックエンドをトークン認証で呼ぶ。
 resource apiManagement 'Microsoft.ApiManagement/service@2022-08-01' = {
   name: apimServiceName
   location: location
+  identity: {
+    type: 'SystemAssigned'
+  }
   sku: {
     name: apimSkuName
     capacity: apimSkuCapacity
@@ -83,32 +78,20 @@ resource apiManagement 'Microsoft.ApiManagement/service@2022-08-01' = {
   tags: tags
 }
 
-// CRUD バックエンド呼び出し時に APIM が付与する内部認証ヘッダー値を保存する。
+// CRUD バックエンド呼び出し時に APIM が付与する内部認証ヘッダー値は Key Vault から動的に取得する。
+// versionless URI なので Key Vault 側でシークレットをローテートすれば APIM 側も自動で追従する。
 resource apimBackendSecret 'Microsoft.ApiManagement/service/namedValues@2022-08-01' = {
   parent: apiManagement
   name: apimBackendSecretNamedValueName
   properties: {
     displayName: apimBackendSecretNamedValueName
     secret: true
-    value: backendSharedSecret
+    keyVault: {
+      secretIdentifier: backendSecretUri
+    }
     tags: [
       'backend'
       'function'
-    ]
-  }
-}
-
-// AOAI の API キーは APIM 内の named value に格納し、policy から参照する。
-resource azureOpenAiBackendKey 'Microsoft.ApiManagement/service/namedValues@2022-08-01' = if (enableAzureOpenAiApi) {
-  parent: apiManagement
-  name: azureOpenAiApiKeyNamedValueName
-  properties: {
-    displayName: azureOpenAiApiKeyNamedValueName
-    secret: true
-    value: azureOpenAiApiKey
-    tags: [
-      'backend'
-      'azure-openai'
     ]
   }
 }
@@ -135,12 +118,12 @@ module azureOpenAiApi './apim-aoai-api.bicep' = if (enableAzureOpenAiApi) {
     azureOpenAiApiPath: azureOpenAiApiPath
     azureOpenAiProductName: azureOpenAiProductName
     azureOpenAiSubscriptionName: azureOpenAiSubscriptionName
-    azureOpenAiApiKeyNamedValueName: azureOpenAiBackendKey.name
   }
 }
 
 output apimServiceName string = apiManagement.name
 output apimGatewayUrl string = 'https://${apiManagement.name}.azure-api.net'
+output apimPrincipalId string = apiManagement.identity.principalId
 output apiBaseUrl string = crudApi.outputs.apiBaseUrl
 output apiKeyHeaderName string = 'X-API-Key'
 output apimSubscriptionName string = crudApi.outputs.subscriptionName

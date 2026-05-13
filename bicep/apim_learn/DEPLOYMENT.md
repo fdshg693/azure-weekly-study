@@ -10,12 +10,14 @@
 
 そのため、デプロイ成功後に `rg-func-crud-dev` 配下には `Microsoft.CognitiveServices/accounts` の AOAI リソースも増えます。増えるのは主に以下です。
 
-- Azure OpenAI リソース
+- Azure OpenAI リソース（`disableLocalAuth: true` で key 認証を遮断）
 - Azure OpenAI モデルデプロイ
-- APIM サービス
+- APIM サービス（System-Assigned Managed Identity）
 - APIM の `azure-openai-api`
 - APIM の Product / Subscription
-- APIM の Named Value に保存した AOAI API キー
+- APIM の MI に対する **Cognitive Services OpenAI User** ロール割り当て
+
+APIM は Managed Identity で Entra トークンを取得して AOAI を呼ぶため、APIM の named value に AOAI key を保存しません（鍵が漏れる経路がそもそも存在しない）。
 
 ## 1. リソースグループを作成
 
@@ -56,8 +58,9 @@ just init-local-param
 
 - `prefix`
 - `pythonVersion`
-- `servicePlanSku`
+- `servicePlanSku`（既定 `EP1`。identity-based Storage 接続が必要なため Premium 以上。`Y1` には変更しないでください）
 - `apimSkuName`
+- `backendSharedSecret`（任意。未指定なら `newGuid()` で自動生成。固定値が必要なら `main.local.bicepparam` で上書きするか、`az.getSecret()` で別 Key Vault から渡す）
 - `enableAzureOpenAiApi`
 - `azureOpenAiLocation`（既定ではメインの `location` と同じ）
 - `azureOpenAiDeploymentName`
@@ -155,9 +158,22 @@ az deployment group create --resource-group rg-func-crud-dev --template-file mai
 - `apiKeyCommand`
 - `azureOpenAiApiKeyCommand`（有効時のみ）
 - `storageAccountName`
+- `keyVaultName`
+- `keyVaultUri`
 - `deployCommand`
 
 利用者向けのエンドポイントは `apiBaseUrl` です。
+
+`BACKEND_SHARED_SECRET` の実体は Key Vault に格納されており、Function App / APIM ともに Managed Identity 経由で取得します。値を直接確認したい場合は次のいずれかで取得できます。
+
+```powershell
+# Key Vault から直接取得（実行者に Key Vault Secrets User 以上の RBAC ロールが必要）
+$kvName = (az deployment group show --resource-group rg-func-crud-dev --name main --query "properties.outputs.keyVaultName.value" -o tsv)
+az keyvault secret show --vault-name $kvName --name backend-shared-secret --query value -o tsv
+
+# Function App から取得（App Setting の Key Vault reference を解決した値が返る）
+just backend-secret
+```
 
 ## 5. API キー取得
 
@@ -286,9 +302,9 @@ Invoke-RestMethod -Method POST -Uri "$apiBaseUrl/items" -ContentType 'applicatio
 
 ### AOAI リソースが見当たらない
 
-これはこのテンプレートの現在の仕様です。`enableAzureOpenAiApi = true` は、既存 AOAI を APIM の背後に公開するためのスイッチであり、AOAI 自体をプロビジョニングするスイッチではありません。
+`enableAzureOpenAiApi = true` を指定するとテンプレートが Azure OpenAI 本体とモデルデプロイも作成します。リソースグループに `Microsoft.CognitiveServices/accounts` 配下のリソースが出ているか確認してください。
 
-AOAI を Azure 上にまだ持っていない場合は、別途 Azure OpenAI リソースを作成してから、その `endpoint` と `apiKey` をこのテンプレートに渡してください。
+`enableAzureOpenAiApi = false` のままだとデフォルトで AOAI は作成されません。APIM 配下にも `/aoai` API は登録されません。
 
 今回のサンプルをそのままデプロイした場合、実際の値は例えば以下です。
 
@@ -298,6 +314,24 @@ $apimServiceName = 'apim-apimlearn-x3y7rmx5'
 ```
 
 `api-general-test` のような別のリソースグループを指定すると、そこに APIM が存在しない限り `ResourceNotFound` になります。
+
+### AOAI を直接 key で叩くと 401 になる
+
+これは仕様です。`disableLocalAuth: true` を設定しているため、AOAI へのアクセスは APIM の Managed Identity による Entra トークン認証ルートのみ受け付けます。`api-key` ヘッダーは無効化されています。
+
+利用者は APIM 経由（`/aoai/...` + `X-API-Key`）で AOAI を呼んでください。
+
+### role assignment 作成で `AuthorizationFailed` が出る
+
+Bicep デプロイには `Microsoft.Authorization/roleAssignments/write` 権限が必要です。Contributor だけでは不足で、**User Access Administrator** または **Owner** ロールが必要です。
+
+```powershell
+az role assignment list --assignee (az account show --query user.name -o tsv) --all --query "[?roleDefinitionName=='Owner' || roleDefinitionName=='User Access Administrator']" -o table
+```
+
+### Function App が起動後に Storage 接続エラーになる
+
+`AzureWebJobsStorage` が identity-based のため、Function App MI に対する Storage 系ロール（Blob Data Owner / Queue Data Contributor / Table Data Contributor / File Data SMB Share Contributor）が **Storage Account 全体に伝播するまで最大 5〜10 分** かかります。デプロイ直後に Function App が再起動を繰り返す場合は、しばらく待ってから再確認してください。
 
 ### `ServiceAlreadyExistsInSoftDeletedState` が出る
 

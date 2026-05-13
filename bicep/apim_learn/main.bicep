@@ -3,6 +3,12 @@
 // ============================================================================
 // main.bicep はオーケストレーターとして振る舞い、実リソース定義は modules/ に分割する。
 //
+// セキュリティモデル：
+//   - Function App は System-Assigned Managed Identity で Storage / Key Vault にアクセス
+//   - APIM は System-Assigned Managed Identity で Key Vault / Azure OpenAI にアクセス
+//   - BACKEND_SHARED_SECRET は Key Vault に格納し、Function App / APIM 双方が参照
+//   - Azure OpenAI は disableLocalAuth:true で key 認証を遮断（APIM の MI のみ受け入れ）
+//
 // デプロイコマンド:
 //   az deployment group create \
 //     --resource-group <リソースグループ名> \
@@ -27,9 +33,9 @@ param suffix string = uniqueString(resourceGroup().id)
 @allowed(['3.9', '3.10', '3.11', '3.12', '3.13'])
 param pythonVersion string = '3.11'
 
-@description('App Service Plan の SKU（Y1: Consumption サーバーレス）')
+@description('App Service Plan の SKU。Identity-based AzureWebJobsStorage は Premium (EP*) 以上が必要なため、デフォルトを EP1 に設定。Y1 (Consumption) を選んだ場合は Storage 接続が key 認証にフォールバックする必要があるが、本テンプレートでは未対応。')
 @allowed(['Y1', 'EP1', 'EP2', 'EP3', 'B1'])
-param servicePlanSku string = 'Y1'
+param servicePlanSku string = 'EP1'
 
 @description('API Management の SKU（サンプル用途では Consumption を推奨）')
 @allowed(['Consumption', 'Developer', 'BasicV2', 'StandardV2'])
@@ -52,7 +58,7 @@ param tags object = {
 param publishFunctionCode bool = true
 
 @secure()
-@description('APIM と Function App 間で共有するバックエンド認証シークレット。未指定時はデプロイ時に自動生成されます')
+@description('APIM と Function App 間で共有するバックエンド認証シークレット。Key Vault に格納されます。未指定時はデプロイ時に自動生成（newGuid）されますが、本番では bicepparam の az.getSecret() で受け渡しを推奨。')
 param backendSharedSecret string = newGuid()
 
 @description('Azure OpenAI を新規作成し、APIM 配下の別 API として公開するか')
@@ -88,12 +94,17 @@ param azureOpenAiVersionUpgradeOption string = 'OnceNewDefaultVersionAvailable'
 var functionAppName = 'func-${prefix}-${suffix}'
 var apimServiceName = 'apim-${prefix}-${take(suffix, 8)}'
 var azureOpenAiAccountName = 'aoai-${prefix}-${take(suffix, 8)}'
+// Key Vault 名は 3-24 文字、英数字とハイフンのみ。プレフィックスとサフィックスから生成。
+var keyVaultName = take('kv-${prefix}-${take(suffix, 8)}', 24)
 var functionAppSource = loadTextContent('python/function_app.py')
 var hostJsonContent = loadTextContent('python/host.json')
 var requirementsTxtContent = loadTextContent('python/requirements.txt')
 var functionCodeHash = uniqueString(functionAppSource, hostJsonContent, requirementsTxtContent, pythonVersion)
 var deployPythonScript = loadTextContent('scripts/deploy_function_code.py')
 
+// ============================================================================
+// モジュール
+// ============================================================================
 module core './modules/core.bicep' = {
   name: 'coreResources'
   params: {
@@ -105,16 +116,14 @@ module core './modules/core.bicep' = {
   }
 }
 
-module functionApp './modules/function-app.bicep' = {
-  name: 'functionAppResources'
+// Key Vault は Function App / APIM より先に作成しておく（URI を双方へ渡すため）。
+module keyVault './modules/key-vault.bicep' = {
+  name: 'keyVaultResources'
   params: {
     location: location
-    functionAppName: functionAppName
-    servicePlanId: core.outputs.servicePlanId
-    storageAccountName: core.outputs.storageAccountName
-    pythonVersion: pythonVersion
-    tags: tags
+    keyVaultName: keyVaultName
     backendSharedSecret: backendSharedSecret
+    tags: tags
   }
 }
 
@@ -134,6 +143,19 @@ module azureOpenAi './modules/azure-openai.bicep' = {
   }
 }
 
+module functionApp './modules/function-app.bicep' = {
+  name: 'functionAppResources'
+  params: {
+    location: location
+    functionAppName: functionAppName
+    servicePlanId: core.outputs.servicePlanId
+    storageAccountName: core.outputs.storageAccountName
+    pythonVersion: pythonVersion
+    tags: tags
+    backendSecretUri: keyVault.outputs.backendSecretUri
+  }
+}
+
 module apim './modules/apim.bicep' = {
   name: 'apiManagementResources'
   params: {
@@ -144,14 +166,27 @@ module apim './modules/apim.bicep' = {
     apimPublisherEmail: apimPublisherEmail
     functionDefaultHostName: functionApp.outputs.functionDefaultHostName
     tags: tags
-    backendSharedSecret: backendSharedSecret
+    backendSecretUri: keyVault.outputs.backendSecretUri
     enableAzureOpenAiApi: enableAzureOpenAiApi
-    // APIM から AOAI へ転送する URL は、AOAI モジュールの出力をそのまま使う。
     azureOpenAiEndpoint: azureOpenAi.outputs.azureOpenAiEndpoint
-    azureOpenAiApiKey: azureOpenAi.outputs.azureOpenAiApiKey
   }
 }
 
+// ロール割り当ては Function App と APIM の MI が確定してから一括で行う。
+module roleAssignments './modules/role-assignments.bicep' = {
+  name: 'roleAssignments'
+  params: {
+    storageAccountName: core.outputs.storageAccountName
+    keyVaultName: keyVault.outputs.keyVaultName
+    functionAppPrincipalId: functionApp.outputs.functionAppPrincipalId
+    apimPrincipalId: apim.outputs.apimPrincipalId
+    enableAzureOpenAiApi: enableAzureOpenAiApi
+    azureOpenAiAccountName: azureOpenAi.outputs.azureOpenAiAccountName
+  }
+}
+
+// 関数コード配布は最後（ロール割り当て後）に行う。
+// 注意: Function App のランタイムが Storage に対する MI 認可を受けるためにロール伝播待ち（最大 5-10 分）が発生する場合がある。
 module functionCodeDeployment './modules/function-code-deployment.bicep' = {
   name: 'functionCodeDeployment'
   params: {
@@ -164,6 +199,9 @@ module functionCodeDeployment './modules/function-code-deployment.bicep' = {
     deployPythonScript: deployPythonScript
     functionCodeHash: functionCodeHash
   }
+  dependsOn: [
+    roleAssignments
+  ]
 }
 
 // ============================================================================
@@ -210,6 +248,12 @@ output azureOpenAiApiKeyCommand string = enableAzureOpenAiApi ? 'az rest --metho
 
 @description('Storage Account の名前')
 output storageAccountName string = core.outputs.storageAccountName
+
+@description('Key Vault の名前')
+output keyVaultName string = keyVault.outputs.keyVaultName
+
+@description('Key Vault の URI')
+output keyVaultUri string = keyVault.outputs.keyVaultUri
 
 @description('手動で再デプロイする場合のコマンド')
 output deployCommand string = 'cd python && func azure functionapp publish ${functionApp.outputs.functionAppName}'

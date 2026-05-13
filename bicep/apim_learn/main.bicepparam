@@ -19,8 +19,10 @@ param prefix = 'apimlearn'
 // Python のバージョン
 param pythonVersion = '3.11'
 
-// Consumption プラン（サーバーレス）
-param servicePlanSku = 'Y1'
+// App Service Plan SKU。
+// 注意: identity-based AzureWebJobsStorage (Function App MI で Storage を呼ぶ構成) は
+// Premium (EP*) または Flex Consumption (FC*) 以上が必須。Y1 (Consumption) では動作しません。
+param servicePlanSku = 'EP1'
 
 // API Management の SKU
 param apimSkuName = 'Developer'

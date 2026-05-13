@@ -27,8 +27,23 @@ param apimPublisherEmail = 'your-team@example.com'
 // param azureOpenAiDeploymentSkuName = 'GlobalStandard'
 // param azureOpenAiDeploymentCapacity = 10
 
-// 固定の内部シークレットを使いたい場合のみ設定してください
-// param backendSharedSecret = '<set-only-in-local-file>'
+// BACKEND_SHARED_SECRET の渡し方（学習ポイント）
+//
+// 1) デフォルトでは main.bicep で newGuid() が呼ばれて自動生成される（再デプロイで値が変わる点に注意）。
+//    シークレットは Key Vault に格納され、Function App / APIM 双方から Managed Identity で参照される。
+//
+// 2) 固定値を渡す場合は以下のように直接代入する。
+//    param backendSharedSecret = '<set-only-in-local-file>'
+//
+// 3) 推奨: 既存の Key Vault からデプロイ時に取り出す（値が bicepparam にも tfstate にも残らない）。
+//    使う前に対象の Key Vault に "bootstrap-backend-secret" などのシークレットを手動で 1 回投入しておく。
+//
+//    param backendSharedSecret = az.getSecret(
+//      subscription().subscriptionId,
+//      'rg-bootstrap',
+//      'kv-bootstrap-xxx',
+//      'bootstrap-backend-secret'
+//    )
 
 param tags = {
   Environment: 'Local'

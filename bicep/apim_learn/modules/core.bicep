@@ -44,4 +44,5 @@ resource servicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
 }
 
 output storageAccountName string = storageAccount.name
+output storageAccountId string = storageAccount.id
 output servicePlanId string = servicePlan.id
