@@ -2,6 +2,9 @@
 local.tfvars
 *.local.tfvars
 
+# Bicep のローカルパラメータ (機密値を含む)
+*.local.bicepparam
+
 # 自分用のファイルは無視
 **maikuma**
 test*

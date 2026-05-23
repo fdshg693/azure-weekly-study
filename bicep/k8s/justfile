@@ -1,0 +1,65 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+default:
+  @just --list
+
+# このプロジェクトで使うリソースグループを作成する。
+group-create resource_group="rg-aks-demo" location="japaneast":
+  @az group create --name {{resource_group}} --location {{location}}
+
+# チェックインされた例からローカルパラメータファイルを作成する。
+init-local-param:
+  @if (Test-Path main.local.bicepparam) { Write-Host 'main.local.bicepparam already exists.' } else { Copy-Item main.local.bicepparam.example main.local.bicepparam; Write-Host 'Created main.local.bicepparam from example. Edit pgAdminPassword before deploying.' }
+
+# Bicep をデプロイする (ACR / AKS / AcrPull ロール / PostgreSQL)。
+deploy resource_group="rg-aks-demo" param_file="main.bicepparam":
+  @az deployment group create --resource-group {{resource_group}} --template-file main.bicep --parameters {{param_file}}
+
+# ローカルパラメータファイル (main.local.bicepparam) でデプロイする。
+deploy-local resource_group="rg-aks-demo":
+  @just deploy {{resource_group}} main.local.bicepparam
+
+# デプロイの出力値を表示する。
+outputs resource_group="rg-aks-demo" deployment_name="main":
+  @$d = az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} | ConvertFrom-Json; [pscustomobject]@{ acrName = $d.properties.outputs.acrName.value; acrLoginServer = $d.properties.outputs.acrLoginServer.value; aksName = $d.properties.outputs.aksName.value; pgFqdn = $d.properties.outputs.pgFqdn.value; pgAdminUser = $d.properties.outputs.pgAdminUser.value } | Format-List
+
+# api/ と front/ のイメージを ACR Tasks でクラウドビルド & プッシュする。
+acr-build resource_group="rg-aks-demo" deployment_name="main":
+  @$acr = az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} --query properties.outputs.acrName.value -o tsv; az acr build --registry $acr --image myapp/api:v1 ./api; az acr build --registry $acr --image myapp/front:v1 ./front
+
+# kubectl が無ければ入れる。
+install-kubectl:
+  @az aks install-cli
+
+# AKS の接続情報を取り込み、Node が並ぶか確認する。
+credentials resource_group="rg-aks-demo" deployment_name="main":
+  @$aks = az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} --query properties.outputs.aksName.value -o tsv; az aks get-credentials --resource-group {{resource_group}} --name $aks --overwrite-existing; kubectl get nodes
+
+# DB 接続情報を Kubernetes Secret (db-conn) に入れる。pg_password は deploy 時と同じ値を渡す。
+# 例: just secret-create rg-aks-demo "ChangeMe_Strong#Pass1"
+secret-create resource_group="rg-aks-demo" pg_password="" deployment_name="main":
+  @if ('{{pg_password}}' -eq '') { Write-Error 'pg_password is required. 例: just secret-create rg-aks-demo "YourPassword"'; exit 1 }; $d = az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} | ConvertFrom-Json; $h = $d.properties.outputs.pgFqdn.value; $u = $d.properties.outputs.pgAdminUser.value; kubectl create secret generic db-conn --from-literal=PGHOST=$h --from-literal=PGUSER=$u --from-literal=PGPASSWORD='{{pg_password}}' --from-literal=PGDATABASE=postgres --from-literal=PGSSLMODE=require --dry-run=client -o yaml | kubectl apply -f -
+
+# マニフェストを適用する (image の ACR を Bicep 出力で置換して apply)。
+apply resource_group="rg-aks-demo" deployment_name="main":
+  @$acr = az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} --query properties.outputs.acrLoginServer.value -o tsv; (Get-Content manifests/api-deployment.yaml -Raw) -replace '__ACR_LOGIN_SERVER__', $acr | kubectl apply -f -; (Get-Content manifests/front-deployment.yaml -Raw) -replace '__ACR_LOGIN_SERVER__', $acr | kubectl apply -f -; kubectl apply -f manifests/services.yaml; kubectl apply -f manifests/ingress.yaml; kubectl apply -f manifests/hpa.yaml
+
+# Bicep デプロイ後の K8s 側を一括セットアップする (認証情報取り込み → Secret → 適用)。
+k8s-up resource_group="rg-aks-demo" pg_password="":
+  @just credentials {{resource_group}}; just secret-create {{resource_group}} "{{pg_password}}"; just apply {{resource_group}}
+
+# Ingress に払い出された外部 IP を表示する。
+ingress-ip:
+  @kubectl get ingress app -o "jsonpath={.status.loadBalancer.ingress[0].ip}"
+
+# Pod / Service / Ingress / HPA の状態をまとめて表示する。
+status:
+  @kubectl get pods,svc,ingress,hpa
+
+# Pod 一覧 (app=api) を見て 1 つ消し、自己修復を観察する。
+self-heal-demo:
+  @kubectl get pods -l app=api; $pod = kubectl get pods -l app=api -o "jsonpath={.items[0].metadata.name}"; Write-Host "deleting $pod ..."; kubectl delete pod $pod; kubectl get pods -l app=api
+
+# リソースグループごと削除する (LB / IP もまとめて消える)。
+destroy resource_group="rg-aks-demo":
+  @az group delete --name {{resource_group}} --yes --no-wait

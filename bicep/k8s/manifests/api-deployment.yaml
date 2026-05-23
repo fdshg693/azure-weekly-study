@@ -1,0 +1,40 @@
+# API の Deployment。
+# image の __ACR_LOGIN_SERVER__ は justfile の `apply` レシピが Bicep 出力の
+# acrLoginServer に置換してから kubectl へ流す。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  replicas: 2                       # 望ましい状態の「N」
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api                    # Service / HPA が指差すラベル
+    spec:
+      containers:
+        - name: api
+          image: __ACR_LOGIN_SERVER__/myapp/api:v1
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: db-conn       # Secret を丸ごと環境変数に注入
+          readinessProbe:           # リクエストを受けられる状態か
+            httpGet:
+              path: /healthz
+              port: 8080
+          livenessProbe:            # 生きているか (ダメなら再起動)
+            httpGet:
+              path: /healthz
+              port: 8080
+          resources:
+            requests:               # スケジューラが配置に使う確保量
+              cpu: "100m"
+              memory: "128Mi"
+            limits:                 # 使いすぎへの歯止め
+              cpu: "500m"
+              memory: "256Mi"

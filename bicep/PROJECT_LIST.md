@@ -22,3 +22,11 @@
 - App Service の System-Assigned MI が AAD トークンを取得し Function を Bearer 認証で呼ぶ
 - `vm_command_runner` の Function 側 Easy Auth を allowedPrincipals = App Service MI Object ID で固める
 - コマンド実行 / 状態確認 / 手動 start・stop / 実行履歴 を画面から操作可能
+
+4. `k8s`
+- 記事 `aks_app_build.md` を Bicep + Justfile で実装した「AKS が主役」の最小構成アプリ
+- ACR / AKS (application routing addon) / PostgreSQL フレキシブルサーバーを Bicep でデプロイ
+- 記事の `--attach-acr` は kubelet マネージド ID への AcrPull ロール付与で再現
+- K8s マニフェスト (Deployment / Service / Ingress / HPA / Secret) は `manifests/` に分離、`justfile` で適用
+- サンプルアプリ同梱: `api/` (Flask + psycopg, /healthz と /api)、`front/` (nginx 静的ページ)
+- ビルドは `az acr build` でクラウド側実行 (手元に Docker 不要)
