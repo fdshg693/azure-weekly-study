@@ -30,3 +30,10 @@
 - K8s マニフェスト (Deployment / Service / Ingress / HPA / Secret) は `manifests/` に分離、`justfile` で適用
 - サンプルアプリ同梱: `api/` (Flask + psycopg, /healthz と /api)、`front/` (nginx 静的ページ)
 - ビルドは `az acr build` でクラウド側実行 (手元に Docker 不要)
+
+5. `azure_ml`
+- 記事 `azure_ml.md` を Bicep + Python SDK v2 + Justfile で実装した Azure Machine Learning ハンズオン
+- Bicep で Workspace + 付随リソース (Storage / Key Vault / Application Insights) をデプロイ (ACR は初回ビルド時に自動作成)
+- Python SDK v2 (`flow/`) で 学習ジョブ (Serverless) → モデル登録 → Online Endpoint デプロイ → 推論 → 削除 の一連
+- ML 中身は超最小: `y=3x+2` の合成トイデータ + scikit-learn 線形回帰、scoring script は `onlinescoring/score.py`
+- 接続は `MLClient.from_config` + `DefaultAzureCredential`、`config.json` は `just write-config` が Bicep 出力から生成

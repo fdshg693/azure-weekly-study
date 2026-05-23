@@ -1,0 +1,22 @@
+# Environment 定義 (記事 5 章)。
+# このファイルから Azure ML が初回ジョブ時に Docker イメージをビルドし、
+# 自動作成された ACR にキャッシュする。2 回目以降は再ビルドされない。
+#
+# 学習 (train.py) と推論 (onlinescoring/score.py) の両方をこの 1 つの環境で動かす:
+#   - scikit-learn / joblib / numpy … 学習・推論の本体
+#   - mlflow / azureml-mlflow       … ジョブのメトリクス記録
+#   - azureml-inference-server-http … オンラインエンドポイントの推論サーバ (記事 9 章)
+name: toy-linreg-env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - scikit-learn==1.4.2
+      - numpy
+      - joblib
+      - pandas
+      - mlflow
+      - azureml-mlflow
+      - azureml-inference-server-http

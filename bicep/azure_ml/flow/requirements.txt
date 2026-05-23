@@ -1,0 +1,4 @@
+# ローカルで SDK v2 オーケストレーション (flow/) を動かすための依存。
+# 学習・推論そのものの依存 (sklearn など) はクラウド側の Environment (src/conda.yml) に入る。
+azure-ai-ml>=1.20.0
+azure-identity>=1.17.0

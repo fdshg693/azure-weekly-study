@@ -1,0 +1,16 @@
+# SDK v2 の接続情報 (write-config が生成。サブスクリプション ID を含む)
+config.json
+
+# ローカル venv
+.venv/
+
+# フロー間で受け渡す一時ファイル
+.last_job
+.last_endpoint
+
+# Python キャッシュ
+__pycache__/
+*.pyc
+
+# ARM 生成物
+main.json
