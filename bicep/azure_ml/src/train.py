@@ -1,7 +1,8 @@
-"""トイデータで線形回帰を学習する超最小スクリプト (記事 7 章 command job の中身)。
+"""Data asset を読んで線形回帰を学習する超最小スクリプト (記事 6・7 章 command job の中身)。
 
 ローカルの `python train.py` をそのまま Azure ML の command job として動かす。
-データは外部に用意せず、その場で y = 3x + 2 + ノイズ の合成データを作る。
+入力データは --data が指す CSV (x,y 列) から読む。クラウドではこのパスに、登録済み
+Data asset (azureml:toy-data@latest) がマウントされて渡ってくる (記事 6 章)。
 学習済みモデルは --model_output が指すフォルダに model.pkl として保存する。
 このフォルダはジョブの「出力」として Workspace に記録され、後でモデル登録に使える。
 """
@@ -10,23 +11,23 @@ import argparse
 from pathlib import Path
 
 import joblib
-import numpy as np
+import pandas as pd
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--n_samples", type=int, default=200)
-    parser.add_argument("--noise", type=float, default=1.0)
+    parser.add_argument("--data", type=str, required=True,
+                        help="x,y 列を持つ CSV ファイル (Data asset がマウントされる)")
     parser.add_argument("--model_output", type=str, required=True,
                         help="モデルを書き出すフォルダ (ジョブ出力にマウントされる)")
     args = parser.parse_args()
 
-    # --- トイデータ生成: 真の関係は y = 3x + 2 ---
-    rng = np.random.default_rng(42)
-    x = rng.uniform(-5.0, 5.0, size=(args.n_samples, 1))
-    y = 3.0 * x[:, 0] + 2.0 + rng.normal(0.0, args.noise, size=args.n_samples)
+    # --- データ読み込み: Data asset の CSV を読む (真の関係は y = 3x + 2) ---
+    df = pd.read_csv(args.data)
+    x = df[["x"]].to_numpy()
+    y = df["y"].to_numpy()
 
     # --- 学習 ---
     model = LinearRegression().fit(x, y)
@@ -34,7 +35,7 @@ def main() -> None:
     mse = float(mean_squared_error(y, pred))
     r2 = float(r2_score(y, pred))
 
-    print(f"学習サンプル数: {args.n_samples}")
+    print(f"学習サンプル数: {len(df)}")
     print(f"推定: y = {model.coef_[0]:.3f} x + {model.intercept_:.3f}  (真値 3x + 2)")
     print(f"MSE = {mse:.4f} / R2 = {r2:.4f}")
 
@@ -44,8 +45,7 @@ def main() -> None:
     try:
         import mlflow
 
-        mlflow.log_param("n_samples", args.n_samples)
-        mlflow.log_param("noise", args.noise)
+        mlflow.log_param("n_samples", len(df))
         mlflow.log_metric("mse", mse)
         mlflow.log_metric("r2", r2)
     except Exception as exc:  # noqa: BLE001

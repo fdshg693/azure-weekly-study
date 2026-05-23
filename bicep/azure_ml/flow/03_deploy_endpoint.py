@@ -41,7 +41,7 @@ def main() -> None:
         code_configuration=CodeConfiguration(
             code="./onlinescoring", scoring_script="score.py"
         ),
-        instance_type="Standard_DS3_v2",
+        instance_type="Standard_DS2_v2",
         instance_count=1,
     )
     ml.online_deployments.begin_create_or_update(deployment).result()

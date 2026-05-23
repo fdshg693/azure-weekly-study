@@ -17,6 +17,9 @@ dependencies:
       - numpy
       - joblib
       - pandas
-      - mlflow
+      # mlflow は 2.x に固定する。3.x の log_model は新しい LoggedModels API
+      # (/api/2.0/mlflow/logged-models) を叩くが、Azure ML の MLflow バックエンドが
+      # これを未実装で 404 になる (train_mlflow.py の log_model が失敗する)。2.x なら従来 API で通る。
+      - mlflow<3.0
       - azureml-mlflow
       - azureml-inference-server-http

@@ -1,17 +1,20 @@
-"""Environment を用意して、学習ジョブを Serverless で投げる (記事 5 章 + 7 章)。
+"""Environment を用意して、学習ジョブを Serverless で投げる (記事 5〜7 章)。
 
 compute を指定しない = Serverless。最初の 1 本は Compute を作らずに試せる。
-ジョブの出力 model_output を URI_FOLDER として宣言し、train.py がそこに model.pkl
-を書く。完了後、その出力を 02 でモデルとして登録する。
+入力 data に登録済み Data asset (azureml:toy-data@latest) を読み取り専用マウントで渡し
+(記事 6 章)、出力 model_output を URI_FOLDER として宣言する。train.py が data を読んで
+model_output に model.pkl を書く。完了後、その出力を 02 でモデルとして登録する。
+これで「データ → ジョブ → モデル」の lineage が一本に繋がる。
 """
 
-from azure.ai.ml import Output, command
-from azure.ai.ml.constants import AssetTypes
+from azure.ai.ml import Input, Output, command
+from azure.ai.ml.constants import AssetTypes, InputOutputModes
 from azure.ai.ml.entities import Environment
 
 from _client import get_ml_client
 
 ENV_NAME = "toy-linreg-env"
+DATA_NAME = "toy-data"
 
 
 def main() -> None:
@@ -27,13 +30,24 @@ def main() -> None:
     env = ml.environments.create_or_update(env)
     print(f"environment: {env.name}:{env.version}")
 
-    # --- command job (記事 7 章)。compute 未指定なので Serverless で走る ---
+    # --- command job (記事 6〜7 章)。compute 未指定なので Serverless で走る ---
     job = command(
         code="./src",  # このフォルダ一式が Compute 上にアップロードされる
         command=(
-            "python train.py --n_samples 200 --noise 1.0 "
+            "python train.py --data ${{inputs.data}} "
             "--model_output ${{outputs.model_output}}"
         ),
+        # 記事 6 章: 登録済み Data asset を読み取り専用マウントで渡す (00 で登録済み)。
+        inputs={
+            "data": Input(
+                type=AssetTypes.URI_FILE,
+                # 注: "azureml:" は付けない。azure-ai-ml 1.33.0 では "azureml:name@latest" の
+                # ラベル解決でプレフィックスが剥がれず container 404 になる (":version" 指定は別経路で無事)。
+                # "name@latest" 形式なら SDK バージョンを問わず最新版を解決できる。
+                path=f"{DATA_NAME}@latest",
+                mode=InputOutputModes.RO_MOUNT,
+            )
+        },
         environment=f"{env.name}:{env.version}",
         outputs={"model_output": Output(type=AssetTypes.URI_FOLDER)},
         display_name="toy-linreg-train",
