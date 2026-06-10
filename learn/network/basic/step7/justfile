@@ -1,0 +1,67 @@
+set shell := ["powershell.exe", "-c"]
+
+# Variables
+RESOURCE_GROUP := "rg-network-learn-privatedns"
+LOCATION := "japaneast"
+ZONE := "corp.internal"
+VNET := "vnet-privatedns"
+LINK := "link-to-vnet"
+
+# List available commands
+default:
+    @just --list
+
+# Create resource group and deploy resources (VNet, 2 VMs, Private DNS Zone + link + manual record).
+deploy:
+    az group create --name {{RESOURCE_GROUP}} --location {{LOCATION}}
+    az deployment group create --resource-group {{RESOURCE_GROUP}} --template-file main.bicep
+
+# Show the Private DNS Zone and its VNet link (registration = auto-registration ON).
+info:
+    Write-Host "--- Private DNS Zone ---"
+    az network private-dns zone show --resource-group {{RESOURCE_GROUP}} --name {{ZONE}} --query "{name:name, numRecords:numberOfRecordSets, linkedVnets:numberOfVirtualNetworkLinks}" --output table
+    Write-Host "--- VNet link (registrationEnabled = 自動登録の有無) ---"
+    az network private-dns link vnet list --resource-group {{RESOURCE_GROUP}} --zone-name {{ZONE}} --query "[].{name:name, registration:registrationEnabled, state:virtualNetworkLinkState}" --output table
+
+# Show every record in the zone: the auto-registered vm-a / vm-b, and the manual 'app' alias.
+show-records:
+    Write-Host "--- Records in {{ZONE}} (vm-a / vm-b = 自動登録, app = 手動レコード) ---"
+    az network private-dns record-set a list --resource-group {{RESOURCE_GROUP}} --zone-name {{ZONE}} --query "[].{name:name, ip:join(',', aRecords[].ipv4Address)}" --output table
+
+# CORE: from vm-a, reach vm-b BY NAME (no IP typed). Proves name resolution works in the VNet.
+# Resolves the auto-registered host name AND the manual 'app' alias, then pings by name.
+test-dns:
+    Write-Host "Resolving and pinging BY NAME from vm-a (no IP typed)..."
+    az vm run-command invoke --resource-group {{RESOURCE_GROUP}} --name vm-a --command-id RunShellScript --scripts "echo '=== resolve auto-registered name vm-b.{{ZONE}} ==='; getent hosts vm-b.{{ZONE}}; echo '=== ping vm-b BY NAME ==='; ping -c 4 vm-b.{{ZONE}}; echo '=== resolve manual alias app.{{ZONE}} ==='; getent hosts app.{{ZONE}}"
+
+# CONTRAST: from vm-a, reach vm-b BY IP (10.0.1.5). Works regardless of DNS -- used to prove
+# that when names break (after `unlink`), the network path itself is still fine.
+test-ip:
+    Write-Host "Pinging vm-b BY IP (10.0.1.5) from vm-a -- this does NOT use DNS..."
+    az vm run-command invoke --resource-group {{RESOURCE_GROUP}} --name vm-a --command-id RunShellScript --scripts "ping -c 4 10.0.1.5"
+
+# Add a manual A record live (db.corp.internal -> vm-a 10.0.1.4), then resolve it from vm-b.
+# Demonstrates "手動レコード" as an action (the bicep already created 'app' the same way).
+add-alias:
+    Write-Host "Adding manual record db.{{ZONE}} -> 10.0.1.4 (vm-a)..."
+    az network private-dns record-set a add-record --resource-group {{RESOURCE_GROUP}} --zone-name {{ZONE}} --record-set-name db --ipv4-address 10.0.1.4
+    Write-Host "Resolving db.{{ZONE}} from vm-b..."
+    az vm run-command invoke --resource-group {{RESOURCE_GROUP}} --name vm-b --command-id RunShellScript --scripts "getent hosts db.{{ZONE}}"
+
+# Break name resolution: delete the VNet<->Zone link. Names can no longer be resolved,
+# but the IP path is unchanged. Run `just test-dns` (FAILS to resolve) then `just test-ip` (still SUCCEEDS).
+unlink:
+    Write-Host "Deleting the VNet link '{{LINK}}' (the VNet can no longer see the zone)..."
+    az network private-dns link vnet delete --resource-group {{RESOURCE_GROUP}} --zone-name {{ZONE}} --name {{LINK}} --yes
+    Write-Host "Removed. Now 'just test-dns' should FAIL to resolve names, but 'just test-ip' still SUCCEEDS."
+
+# Restore name resolution: re-create the link (registration ON again). The manual 'app' record
+# resolves immediately; auto-registered vm-a/vm-b records may take a few minutes to reappear.
+link:
+    Write-Host "Re-creating the VNet link '{{LINK}}' (registration ON)..."
+    az network private-dns link vnet create --resource-group {{RESOURCE_GROUP}} --zone-name {{ZONE}} --name {{LINK}} --virtual-network {{VNET}} --registration-enabled true
+    Write-Host "Restored. 'just test-dns' resolves app.{{ZONE}} again right away."
+
+# Delete resource group and all resources.
+destroy:
+    az group delete --name {{RESOURCE_GROUP}} --yes --no-wait

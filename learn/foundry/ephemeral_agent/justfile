@@ -1,0 +1,27 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+# venv の Python。venv レシピで作成される。
+py := ".venv/Scripts/python.exe"
+
+default:
+  @just --list
+
+# ローカル実行用の venv を作り、Agent Framework + 依存を入れる。
+venv:
+  @python -m venv .venv; {{py}} -m pip install --upgrade pip; {{py}} -m pip install -r requirements.txt
+
+# ① カスタムツール（ローカル実行）だけのエージェント。
+function-tool:
+  @{{py}} 01_function_tool.py
+
+# ② Web 検索ツール（サーバーサイド実行）だけのエージェント。
+web-search:
+  @{{py}} 02_web_search.py
+
+# ③ Web 検索 + カスタムツールの両方を持つエージェント（本題）。
+combined:
+  @{{py}} 03_combined.py
+
+# ① → ② → ③ を順に実行する。
+all:
+  @just function-tool; just web-search; just combined

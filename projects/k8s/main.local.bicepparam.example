@@ -1,0 +1,19 @@
+using './main.bicep'
+
+// このファイルを main.local.bicepparam にコピーし、pgAdminPassword を実際の
+// 強固なパスワードに差し替えてからデプロイしてください。
+// main.local.bicepparam は .gitignore でコミット対象外です。
+//
+//   just init-local-param   # このファイルから main.local.bicepparam を作る
+//   (main.local.bicepparam を編集)
+//   just deploy-local
+
+param prefix = 'aksdemo'
+param nodeCount = 2
+param nodeVmSize = 'Standard_DS2_v2'
+param pgAdminUser = 'pgadmin'
+param pgVersion = '16'
+
+// 8 文字以上・大文字小文字・数字・記号を含む強固なパスワードに差し替える。
+// 注意: justfile の secret-create で同じ値を渡すため、シングルクォート (') は使わないこと。
+param pgAdminPassword = 'REPLACE_ME_Strong#Pass1'

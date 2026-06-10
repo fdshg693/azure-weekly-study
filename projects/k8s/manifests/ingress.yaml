@@ -1,0 +1,26 @@
+# クラスタ全体の玄関。application routing addon (マネージド NGINX) が用意する
+# Ingress クラス webapprouting.kubernetes.azure.com を使う。
+# /api は API の Service へ、それ以外はフロントの Service へルーティングする。
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app
+spec:
+  ingressClassName: webapprouting.kubernetes.azure.com
+  rules:
+    - http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api          # /api は API の Service へ
+                port:
+                  number: 80
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: front        # それ以外はフロントの Service へ
+                port:
+                  number: 80

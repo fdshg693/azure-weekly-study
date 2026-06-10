@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title><%= title %></title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="bg-light">
+    <div class="container py-4" style="max-width: 1100px;">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="mb-0"><%= title %></h1>
+        <div>
+          <a href="/" class="btn btn-outline-secondary btn-sm">チャットへ戻る</a>
+          <a href="/profile" class="btn btn-outline-secondary btn-sm">直接フロー /profile</a>
+          <% if (account) { %>
+            <a href="/auth/signout" class="btn btn-outline-danger btn-sm">サインアウト</a>
+          <% } %>
+        </div>
+      </div>
+
+      <p class="text-muted small mb-3">
+        ユーザー → アプリ独自スコープ (<code>api://&lt;client-id&gt;/access_as_user</code>) でサインイン →
+        サーバー側で <code>acquireTokenOnBehalfOf</code> により Graph スコープのトークンに交換 →
+        Graph <code>/me</code> を呼ぶ流れ。下に並ぶ 2 つのトークンの <code>aud</code> が
+        変化していれば OBO が成立している。
+      </p>
+
+      <% if (error) { %>
+        <div class="alert alert-danger"><%= error %></div>
+      <% } %>
+
+      <% if (!configured) { %>
+        <div class="card mb-3">
+          <div class="card-body">
+            <p class="mb-2">Entra ID 認証がこの App Service に設定されていません。</p>
+            <p class="small text-muted mb-0">
+              <code>README.md</code> の「OBO フロー」セクションに従い、App Registration で
+              <code>access_as_user</code> スコープを公開してください。
+            </p>
+          </div>
+        </div>
+      <% } else { %>
+
+        <% if (graphUser) { %>
+          <div class="card mb-4">
+            <div class="card-header">Microsoft Graph <code>/me</code> のレスポンス（OBO 交換後トークンで取得）</div>
+            <div class="card-body">
+              <dl class="row mb-0">
+                <dt class="col-sm-3">displayName</dt>
+                <dd class="col-sm-9"><%= graphUser.displayName || "-" %></dd>
+
+                <dt class="col-sm-3">userPrincipalName</dt>
+                <dd class="col-sm-9"><%= graphUser.userPrincipalName || "-" %></dd>
+
+                <dt class="col-sm-3">mail</dt>
+                <dd class="col-sm-9"><%= graphUser.mail || "-" %></dd>
+
+                <dt class="col-sm-3">jobTitle</dt>
+                <dd class="col-sm-9"><%= graphUser.jobTitle || "-" %></dd>
+
+                <dt class="col-sm-3">id</dt>
+                <dd class="col-sm-9"><code><%= graphUser.id %></code></dd>
+              </dl>
+            </div>
+          </div>
+        <% } %>
+
+        <div class="row g-3 mb-4">
+          <div class="col-md-6">
+            <div class="card h-100 border-primary">
+              <div class="card-header bg-primary text-white">
+                ① 初回トークン
+                <span class="badge bg-light text-primary ms-2">audience = アプリ自身</span>
+              </div>
+              <div class="card-body">
+                <% if (initialClaims) { %>
+                  <dl class="row mb-2 small">
+                    <dt class="col-sm-4">aud</dt>
+                    <dd class="col-sm-8"><code><%= initialClaims.aud %></code></dd>
+
+                    <dt class="col-sm-4">scp</dt>
+                    <dd class="col-sm-8"><code><%= initialClaims.scp || "-" %></code></dd>
+
+                    <dt class="col-sm-4">iss</dt>
+                    <dd class="col-sm-8"><code class="small"><%= initialClaims.iss %></code></dd>
+
+                    <dt class="col-sm-4">name</dt>
+                    <dd class="col-sm-8"><%= initialClaims.name || "-" %></dd>
+
+                    <dt class="col-sm-4">upn / preferred</dt>
+                    <dd class="col-sm-8"><%= initialClaims.preferred_username || initialClaims.upn || "-" %></dd>
+
+                    <dt class="col-sm-4">exp</dt>
+                    <dd class="col-sm-8"><%= new Date(initialClaims.exp * 1000).toISOString() %></dd>
+                  </dl>
+                  <details>
+                    <summary class="text-muted small">全クレーム JSON</summary>
+                    <pre class="bg-light border rounded p-2 small" style="white-space: pre-wrap;"><%= JSON.stringify(initialClaims, null, 2) %></pre>
+                  </details>
+                <% } else { %>
+                  <p class="text-muted mb-0">初回トークンが取得できていません。</p>
+                <% } %>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <div class="card h-100 border-success">
+              <div class="card-header bg-success text-white">
+                ② OBO 交換後トークン
+                <span class="badge bg-light text-success ms-2">audience = Microsoft Graph</span>
+              </div>
+              <div class="card-body">
+                <% if (oboClaims) { %>
+                  <dl class="row mb-2 small">
+                    <dt class="col-sm-4">aud</dt>
+                    <dd class="col-sm-8"><code><%= oboClaims.aud %></code></dd>
+
+                    <dt class="col-sm-4">scp</dt>
+                    <dd class="col-sm-8"><code><%= oboClaims.scp || "-" %></code></dd>
+
+                    <dt class="col-sm-4">iss</dt>
+                    <dd class="col-sm-8"><code class="small"><%= oboClaims.iss %></code></dd>
+
+                    <dt class="col-sm-4">name</dt>
+                    <dd class="col-sm-8"><%= oboClaims.name || "-" %></dd>
+
+                    <dt class="col-sm-4">upn / preferred</dt>
+                    <dd class="col-sm-8"><%= oboClaims.preferred_username || oboClaims.upn || "-" %></dd>
+
+                    <dt class="col-sm-4">exp</dt>
+                    <dd class="col-sm-8"><%= new Date(oboClaims.exp * 1000).toISOString() %></dd>
+                  </dl>
+                  <details>
+                    <summary class="text-muted small">全クレーム JSON</summary>
+                    <pre class="bg-light border rounded p-2 small" style="white-space: pre-wrap;"><%= JSON.stringify(oboClaims, null, 2) %></pre>
+                  </details>
+                <% } else { %>
+                  <p class="text-muted mb-0">OBO トークンが取得できていません。</p>
+                <% } %>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mb-3">
+          <div class="card-header">OBO 失敗テスト</div>
+          <div class="card-body">
+            <p class="small text-muted">
+              不正なスコープ <code>https://nonexistent.invalid/.default</code> で OBO を呼び、
+              Entra が <code>AADSTS</code> 系のエラーを返すことを確認する。これによりリクエストが
+              ローカルで弾かれているのではなく実際に Entra に到達していることが分かる。
+            </p>
+            <button id="fail-btn" type="button" class="btn btn-outline-warning btn-sm">不正スコープで OBO を試す</button>
+            <pre id="fail-output" class="bg-light border rounded p-2 small mt-2 d-none" style="white-space: pre-wrap;"></pre>
+          </div>
+        </div>
+      <% } %>
+
+      <p class="text-muted small">
+        OBO demo: Microsoft Entra ID On-Behalf-Of flow with MSAL Node
+      </p>
+    </div>
+
+    <script>
+      (() => {
+        const btn = document.getElementById("fail-btn");
+        const out = document.getElementById("fail-output");
+        if (!btn) return;
+        btn.addEventListener("click", async () => {
+          btn.disabled = true;
+          out.classList.remove("d-none");
+          out.textContent = "送信中...";
+          try {
+            const res = await fetch("/profile-obo/fail-test", { method: "POST" });
+            const data = await res.json();
+            out.textContent = JSON.stringify(data, null, 2);
+          } catch (err) {
+            out.textContent = "fetch エラー: " + (err.message || String(err));
+          } finally {
+            btn.disabled = false;
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

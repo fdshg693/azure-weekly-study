@@ -1,0 +1,82 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+# Terraform variables.tf のデフォルト値と合わせる
+resource_group := "rg-app-service-dev"
+web_app_name   := "webapp-chatbot-dev-seiwan"
+app_dir        := "app"
+zip_path       := "app.zip"
+
+default:
+  @just --list
+
+# ----------------------------------------------------------------------------
+# Terraform
+# ----------------------------------------------------------------------------
+
+# Terraform プロバイダーを初期化
+init:
+  @terraform init
+
+# 変更内容のプレビュー
+plan:
+  @terraform plan
+
+# インフラを作成・更新（確認なし）
+apply:
+  @terraform apply -auto-approve
+
+# インフラを削除（確認なし）
+destroy:
+  @terraform destroy -auto-approve
+
+# 出力値を表示
+output:
+  @terraform output
+
+# ----------------------------------------------------------------------------
+# アプリのパッケージング・デプロイ
+# ----------------------------------------------------------------------------
+
+# app/ を zip にパッケージング（node_modules は同梱せず、App Service 側で Oryx がビルド）
+package:
+  @if (Test-Path {{zip_path}}) { Remove-Item {{zip_path}} -Force }; if (Test-Path "{{app_dir}}/node_modules") { Remove-Item "{{app_dir}}/node_modules" -Recurse -Force }; Compress-Archive -Path {{app_dir}}/* -DestinationPath {{zip_path}}; Write-Host "Created {{zip_path}}"
+
+# パッケージして Web App にデプロイ（zip deploy）
+deploy: package
+  @az webapp deploy --resource-group {{resource_group}} --name {{web_app_name}} --src-path {{zip_path}} --type zip
+
+# インフラ作成 → アプリデプロイをまとめて実行
+up: apply deploy
+
+# ----------------------------------------------------------------------------
+# ローカル開発
+# ----------------------------------------------------------------------------
+
+# ローカルで Express を起動（事前に `az login` 済みであること）
+# AZURE_OPENAI_ENDPOINT は terraform output から自動取得
+dev:
+  @$endpoint = (terraform output -raw openai_endpoint); $env:AZURE_OPENAI_ENDPOINT = $endpoint; Push-Location {{app_dir}}; npm install; npm start; Pop-Location
+
+# ローカル開発に必要な OpenAI ロールを自分自身に付与（初回のみ）
+grant-self:
+  @$me = (az ad signed-in-user show --query id -o tsv); $aoai = (terraform output -raw openai_account_name); $rg = (terraform output -raw resource_group_name); $sub = (az account show --query id -o tsv); az role assignment create --assignee $me --role "Cognitive Services OpenAI User" --scope "/subscriptions/$sub/resourceGroups/$rg/providers/Microsoft.CognitiveServices/accounts/$aoai"
+
+# ----------------------------------------------------------------------------
+# 動作確認
+# ----------------------------------------------------------------------------
+
+# Web App の URL を表示
+url:
+  @terraform output -raw web_app_url
+
+# ブラウザで Web App を開く
+open:
+  @az webapp browse --name {{web_app_name}} --resource-group {{resource_group}}
+
+# アプリのログをストリーミング
+logs:
+  @az webapp log tail --name {{web_app_name}} --resource-group {{resource_group}}
+
+# HTTP 応答ヘッダーを確認
+curl:
+  @$hostname = terraform output -raw web_app_default_hostname; curl.exe -sI "https://$hostname"

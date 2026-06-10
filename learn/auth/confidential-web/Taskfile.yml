@@ -1,0 +1,33 @@
+# Taskfile（https://taskfile.dev）。
+# PowerShell の実体は scripts/*.ps1 に切り出し、ここからは呼び出すだけにしてある
+# （巨大ワンライナーを避け、各操作を素直な .ps1 として読めるようにするため。app-roles-rbac と同じ方針）。
+# このプロジェクトには「.env → config.js を生成」する手順は無い：
+#   ブラウザにはクライアント ID もスコープも秘密も渡さない（BFF）。サーバーが .env を直接読む。
+version: '3'
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  register:
+    desc: Entra に「コンフィデンシャルな Web アプリ」を作り、クライアントシークレットを発行する（一度だけ）
+    cmds:
+      - pwsh -NoProfile -File scripts/register.ps1
+
+  tenant:
+    desc: 現在 az でログイン中のテナント ID を表示する（.env の TENANT_ID 用）
+    cmds:
+      - az account show --query tenantId -o tsv
+
+  run:
+    desc: サーバーサイド Web アプリを起動する（初回は jose を npm install）。http://localhost:3000 を開く。Ctrl+C で停止
+    cmds:
+      - pwsh -NoProfile -Command "if (-not (Test-Path server/node_modules)) { Write-Host '依存をインストール中 (jose)...' -ForegroundColor Cyan; Push-Location server; npm install; Pop-Location }"
+      - node server/server.js
+
+  unregister:
+    desc: アプリ登録を削除する（.env の CLIENT_ID を使用。シークレット／SP も一緒に消える）
+    cmds:
+      - pwsh -NoProfile -File scripts/unregister.ps1

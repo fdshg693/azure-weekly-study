@@ -1,0 +1,13 @@
+{
+  "name": "confidential-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "サーバーサイド Web アプリ（コンフィデンシャルクライアント / BFF）— Authorization Code Flow をサーバーでクライアントシークレット付きに完結し、トークンをブラウザに晒さずサーバーで保持する最小実装",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "jose": "^5.9.6"
+  }
+}

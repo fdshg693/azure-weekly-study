@@ -1,0 +1,47 @@
+RESOURCE_GROUP := "rg-azure-lb-learn"
+LOCATION := "japaneast"
+
+# 既定のタスク。利用可能なコマンド一覧を表示する
+default:
+    @just --list
+
+# Bicep テンプレートをデプロイする
+deploy:
+    @echo "Creating Resource Group: {{RESOURCE_GROUP}} in {{LOCATION}}..."
+    az group create --name {{RESOURCE_GROUP}} --location {{LOCATION}} -o none
+    @echo "Deploying Bicep template..."
+    az deployment group create \
+      --resource-group {{RESOURCE_GROUP}} \
+      --template-file main.bicep \
+      --query "properties.outputs.loadBalancerPublicIp.value" \
+      --output tsv > lb_ip.txt
+    @echo "Deployment completed successfully!"
+    @echo "Load Balancer Public IP is saved in lb_ip.txt."
+    @echo "Note: It may take a few minutes for the VMs to run their customData scripts and install Nginx."
+
+# Load Balancer に対して HTTP リクエストを送り、負荷分散の様子を確認する
+test:
+    @if [ ! -f "lb_ip.txt" ]; then \
+        echo "Error: lb_ip.txt not found. Did you run 'just deploy'?"; \
+        exit 1; \
+    fi
+    @echo "Testing Load Balancer at http://$$(cat lb_ip.txt)"
+    @echo "Press Ctrl+C to stop"
+    @echo "----------------------------------------"
+    @while true; do \
+        curl -s --connect-timeout 2 "http://$$(cat lb_ip.txt)" || echo "Request failed"; \
+        sleep 1; \
+    done
+
+# vm-backend-1 を停止し、フェイルオーバーの挙動を確認する
+stop-vm1:
+    @echo "Deallocating vm-backend-1..."
+    az vm deallocate --resource-group {{RESOURCE_GROUP}} --name vm-backend-1
+    @echo "vm-backend-1 is stopped. Check the 'just test' output."
+
+# リソースグループを削除し、環境をクリーンアップする
+cleanup:
+    @echo "Deleting Resource Group: {{RESOURCE_GROUP}}..."
+    az group delete --name {{RESOURCE_GROUP}} --yes --no-wait
+    @rm -f lb_ip.txt
+    @echo "Cleanup initiated."

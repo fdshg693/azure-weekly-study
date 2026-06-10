@@ -1,0 +1,67 @@
+set shell := ["powershell.exe", "-c"]
+
+# Variables
+RESOURCE_GROUP := "rg-network-learn-azfw"
+LOCATION := "japaneast"
+VNET_SPOKE := "vnet-spoke"
+SUBNET := "subnet-workload"
+
+# List available commands
+default:
+    @just --list
+
+# Create resource group and deploy resources (Azure Firewall のデプロイには数分かかります)
+deploy:
+    az group create --name {{RESOURCE_GROUP}} --location {{LOCATION}}
+    Write-Host "Deploying... Azure Firewall のプロビジョニングに 5〜10 分ほどかかります。"
+    az deployment group create --resource-group {{RESOURCE_GROUP}} --template-file main.bicep
+
+# Show the firewall's public IP (egress/SNAT address) and the spoke VM's private IP
+info:
+    $FWPUB = az deployment group show --resource-group {{RESOURCE_GROUP}} --name main --query properties.outputs.firewallPublicIp.value -o tsv
+    $FWPRIV = az deployment group show --resource-group {{RESOURCE_GROUP}} --name main --query properties.outputs.firewallPrivateIp.value -o tsv
+    $WL = az deployment group show --resource-group {{RESOURCE_GROUP}} --name main --query properties.outputs.workloadPrivateIp.value -o tsv
+    Write-Host "Azure Firewall public IP (egress / SNAT address): $FWPUB"
+    Write-Host "Azure Firewall private IP (spoke UDR next hop)   : $FWPRIV"
+    Write-Host "Spoke workload VM private IP (no public IP)       : $WL"
+
+# CORE TEST 1: 許可した FQDN(api.ipify.org)へは出られ、外から見た送信元が Firewall の公開 IP に
+# 集約(SNAT)されていることを確認する。返ってきた IP が Firewall の公開 IP と一致すれば成功。
+test-allow:
+    $FWPUB = az deployment group show --resource-group {{RESOURCE_GROUP}} --name main --query properties.outputs.firewallPublicIp.value -o tsv
+    Write-Host "Asking vm-workload (no public IP) to curl an ALLOWED FQDN (api.ipify.org) via the firewall..."
+    $OUT = az vm run-command invoke --resource-group {{RESOURCE_GROUP}} --name vm-workload --command-id RunShellScript --scripts "curl -s --max-time 15 https://api.ipify.org" --query "value[0].message" -o tsv
+    Write-Host "--- run-command output ---"
+    Write-Host $OUT
+    Write-Host "Firewall public IP (expected egress IP): $FWPUB"
+    Write-Host "→ 出力中の egress IP が Firewall の公開 IP と一致すれば、外向きが Firewall に集約(SNAT)されています。"
+
+# CORE TEST 2: 許可していない FQDN(www.bing.com)への外向きは Firewall に遮断されることを確認する。
+# curl は接続できずエラー(空応答/タイムアウト)になり、Firewall がドメインで止めていることが分かる。
+test-deny:
+    Write-Host "Asking vm-workload to curl a NON-allowed FQDN (www.bing.com)..."
+    Write-Host "EXPECTED TO FAIL: このドメインはアプリケーションルールで許可していないため Firewall が遮断します。"
+    az vm run-command invoke --resource-group {{RESOURCE_GROUP}} --name vm-workload --command-id RunShellScript --scripts "curl -v --max-time 15 https://www.bing.com 2>&1 | tail -n 20; echo '--- exit code:' $?"
+
+# Show the effective routes on the spoke VM's NIC (0.0.0.0/0 -> VirtualAppliance = firewall)
+show-routes:
+    Write-Host "Effective routes on nic-workload (look for 0.0.0.0/0 -> VirtualAppliance):"
+    az network nic show-effective-route-table --resource-group {{RESOURCE_GROUP}} --name nic-workload --output table
+
+# Remove the 0.0.0.0/0 -> firewall route. With defaultOutboundAccess=false there is now NO exit
+# -> even the ALLOWED FQDN can no longer be reached (egress goes nowhere).
+disable-route:
+    Write-Host "Deleting route 'default-to-firewall' from rt-spoke (removing the only egress path)..."
+    az network route-table route delete --resource-group {{RESOURCE_GROUP}} --route-table-name rt-spoke --name default-to-firewall
+    Write-Host "Removed. Run 'just test-allow' again: it should now FAIL/TIMEOUT (no exit without the firewall route)."
+
+# Re-add the 0.0.0.0/0 -> firewall route to restore egress via the firewall
+enable-route:
+    $FWPRIV = az deployment group show --resource-group {{RESOURCE_GROUP}} --name main --query properties.outputs.firewallPrivateIp.value -o tsv
+    Write-Host "Re-creating route 'default-to-firewall' on rt-spoke -> firewall ($FWPRIV)..."
+    az network route-table route create --resource-group {{RESOURCE_GROUP}} --route-table-name rt-spoke --name default-to-firewall --address-prefix 0.0.0.0/0 --next-hop-type VirtualAppliance --next-hop-ip-address $FWPRIV
+    Write-Host "Restored. Run 'just test-allow' again: egress SUCCEEDS and the egress IP matches the firewall again."
+
+# Delete resource group and all resources
+destroy:
+    az group delete --name {{RESOURCE_GROUP}} --yes --no-wait

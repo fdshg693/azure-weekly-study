@@ -1,0 +1,56 @@
+set shell := ["powershell.exe", "-c"]
+
+# Variables
+RESOURCE_GROUP := "rg-network-learn-hubspoke"
+LOCATION := "japaneast"
+
+# List available commands
+default:
+    @just --list
+
+# Create resource group and deploy resources
+deploy:
+    az group create --name {{RESOURCE_GROUP}} --location {{LOCATION}}
+    az deployment group create --resource-group {{RESOURCE_GROUP}} --template-file main.bicep
+
+# Test ping from Spoke1 to Spoke2 via the NVA (should SUCCEED through UDR + hub NVA)
+test-peering:
+    $DST = az deployment group show --resource-group {{RESOURCE_GROUP}} --name main --query properties.outputs.vmSpoke2PrivateIp.value -o tsv
+    Write-Host "Pinging Spoke2 ($DST) from Spoke1 (routed via the hub NVA)..."
+    az vm run-command invoke --resource-group {{RESOURCE_GROUP}} --name vm-spoke1 --command-id RunShellScript --scripts "ping -c 4 $DST"
+
+# Trace the path Spoke1 -> Spoke2 and confirm it hops through the NVA (10.0.0.4)
+trace-route:
+    $DST = az deployment group show --resource-group {{RESOURCE_GROUP}} --name main --query properties.outputs.vmSpoke2PrivateIp.value -o tsv
+    $NVA = az deployment group show --resource-group {{RESOURCE_GROUP}} --name main --query properties.outputs.nvaPrivateIp.value -o tsv
+    Write-Host "Tracing path from Spoke1 to Spoke2 ($DST). You should see the NVA ($NVA) as a hop."
+    az vm run-command invoke --resource-group {{RESOURCE_GROUP}} --name vm-spoke1 --command-id RunShellScript --scripts "tracepath -n $DST"
+
+# Show the effective routes on Spoke1's NIC (you can see the UDR -> VirtualAppliance entry)
+show-routes:
+    Write-Host "Effective routes on nic-spoke1 (look for 10.2.0.0/16 -> VirtualAppliance):"
+    az network nic show-effective-route-table --resource-group {{RESOURCE_GROUP}} --name nic-spoke1 --output table
+
+# Remove the UDR route so Spoke1 no longer knows how to reach Spoke2 (ping will now FAIL)
+disable-route:
+    Write-Host "Deleting route 'to-spoke2' from rt-spoke1..."
+    az network route-table route delete --resource-group {{RESOURCE_GROUP}} --route-table-name rt-spoke1 --name to-spoke2
+    Write-Host "Route removed. Run 'just test-peering' again to see the ping FAIL (peering is not transitive)."
+
+# Re-add the UDR route to restore Spoke1 -> Spoke2 connectivity via the NVA
+enable-route:
+    Write-Host "Re-creating route 'to-spoke2' on rt-spoke1 -> NVA..."
+    $NVA = az deployment group show --resource-group {{RESOURCE_GROUP}} --name main --query properties.outputs.nvaPrivateIp.value -o tsv
+    az network route-table route create --resource-group {{RESOURCE_GROUP}} --route-table-name rt-spoke1 --name to-spoke2 --address-prefix 10.2.0.0/16 --next-hop-type VirtualAppliance --next-hop-ip-address $NVA
+    Write-Host "Route restored. Run 'just test-peering' again to see the ping SUCCEED."
+
+# Test ping from your local machine to Spoke2's private IP (EXPECTED TO FAIL - it is isolated)
+test-local-fail:
+    $DST = az deployment group show --resource-group {{RESOURCE_GROUP}} --name main --query properties.outputs.vmSpoke2PrivateIp.value -o tsv
+    Write-Host "Pinging Spoke2's Private IP ($DST) from your local machine..."
+    Write-Host "This is EXPECTED TO FAIL: Spoke2 has no Public IP and is only reachable via the private hub-spoke path."
+    ping -n 4 $DST
+
+# Delete resource group and all resources
+destroy:
+    az group delete --name {{RESOURCE_GROUP}} --yes --no-wait

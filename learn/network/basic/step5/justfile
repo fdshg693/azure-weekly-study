@@ -1,0 +1,89 @@
+set shell := ["powershell.exe", "-c"]
+
+# Variables
+RESOURCE_GROUP := "rg-network-learn-natgw"
+LOCATION := "japaneast"
+VNET := "vnet-natgw"
+SUBNET := "subnet-private"
+NATGW := "natgw"
+# Local SSH key pair used to authenticate BOTH hops (created by `just keygen`).
+KEY := "natgw_key"
+# Common SSH options to avoid interactive host-key prompts in this lab.
+SSHOPT := "-o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL"
+
+# List available commands
+default:
+    @just --list
+
+# Generate a local SSH key pair (only if it does not exist yet). Never commit the private key.
+keygen:
+    if (-not (Test-Path {{KEY}})) { ssh-keygen -t ed25519 -f {{KEY}} -N '""' -C "azure-natgw-lab"; Write-Host "Generated {{KEY}} / {{KEY}}.pub" } else { Write-Host "{{KEY}} already exists - skip" }
+
+# Create resource group and deploy resources (auto-generates the SSH key, pins the bastion NSG to YOUR global IP)
+deploy: keygen
+    $MYIP = (Invoke-RestMethod -Uri 'https://api.ipify.org')
+    Write-Host "Your global IP (the only source allowed to SSH the bastion): $MYIP"
+    $PUBKEY = (Get-Content {{KEY}}.pub -Raw).Trim()
+    az group create --name {{RESOURCE_GROUP}} --location {{LOCATION}}
+    az deployment group create --resource-group {{RESOURCE_GROUP}} --template-file main.bicep --parameters adminPublicKey="$PUBKEY" myIp="$MYIP"
+
+# Show VM IPs and the NAT Gateway's public IP (the egress / SNAT address shared by the private subnet)
+info:
+    Write-Host "Note: vm-private has NO public IP. Its OUTBOUND traffic exits through the NAT Gateway below."
+    az vm list-ip-addresses --resource-group {{RESOURCE_GROUP}} --output table
+    $NAT = az deployment group show --resource-group {{RESOURCE_GROUP}} --name main --query properties.outputs.natGatewayPublicIp.value -o tsv
+    Write-Host "NAT Gateway public IP (the egress address vm-private will appear as): $NAT"
+
+# CORE TEST: from vm-private (no public IP) reach the internet via the NAT Gateway, and prove SNAT.
+# The egress IP reported by the internet should EQUAL the NAT Gateway's public IP.
+test-egress:
+    $B = az deployment group show --resource-group {{RESOURCE_GROUP}} --name main --query properties.outputs.bastionPublicIp.value -o tsv
+    $P = az deployment group show --resource-group {{RESOURCE_GROUP}} --name main --query properties.outputs.privatePrivateIp.value -o tsv
+    $NAT = az deployment group show --resource-group {{RESOURCE_GROUP}} --name main --query properties.outputs.natGatewayPublicIp.value -o tsv
+    Write-Host "Asking vm-private ($P, no public IP) what egress IP the internet sees..."
+    $SEEN = (ssh -i {{KEY}} {{SSHOPT}} -J azureuser@$B azureuser@$P "curl -s --max-time 12 https://api.ipify.org")
+    Write-Host "NAT Gateway public IP : $NAT"
+    Write-Host "vm-private egress IP  : $SEEN"
+    if ($SEEN -eq $NAT) { Write-Host "MATCH -> outbound is consolidated to the NAT Gateway (SNAT). Inbound stayed closed." } else { Write-Host "No match (if empty, egress failed - did you run 'just detach-nat'?)." }
+
+# Run a real OS package metadata refresh from vm-private to prove practical egress (needs the NAT Gateway)
+test-apt:
+    $B = az deployment group show --resource-group {{RESOURCE_GROUP}} --name main --query properties.outputs.bastionPublicIp.value -o tsv
+    $P = az deployment group show --resource-group {{RESOURCE_GROUP}} --name main --query properties.outputs.privatePrivateIp.value -o tsv
+    Write-Host "Running 'sudo apt-get update' on vm-private via the bastion (this only works through the NAT Gateway)..."
+    ssh -i {{KEY}} {{SSHOPT}} -J azureuser@$B azureuser@$P "sudo apt-get update; echo '--- apt-get update finished (exit code 0 = egress works) ---'"
+
+# Remove the NAT Gateway from subnet-private. With defaultOutboundAccess=false there is now NO exit -> egress will FAIL.
+detach-nat:
+    Write-Host "Detaching NAT Gateway from {{SUBNET}} (removing the subnet's only egress path)..."
+    az network vnet subnet update --resource-group {{RESOURCE_GROUP}} --vnet-name {{VNET}} --name {{SUBNET}} --remove natGateway
+    Write-Host "Detached. Run 'just test-egress' again: it should now FAIL/TIMEOUT (no exit, since default outbound access is disabled)."
+
+# Re-attach the NAT Gateway to subnet-private (egress works again)
+attach-nat:
+    Write-Host "Re-attaching NAT Gateway '{{NATGW}}' to {{SUBNET}}..."
+    az network vnet subnet update --resource-group {{RESOURCE_GROUP}} --vnet-name {{VNET}} --name {{SUBNET}} --nat-gateway {{NATGW}}
+    Write-Host "Re-attached. Run 'just test-egress' again: egress SUCCEEDS and the egress IP matches the NAT Gateway again."
+
+# Open an INTERACTIVE shell on the private VM through the bastion (ProxyJump). Type `exit` to leave.
+ssh-private:
+    $B = az deployment group show --resource-group {{RESOURCE_GROUP}} --name main --query properties.outputs.bastionPublicIp.value -o tsv
+    $P = az deployment group show --resource-group {{RESOURCE_GROUP}} --name main --query properties.outputs.privatePrivateIp.value -o tsv
+    Write-Host "Opening a shell on private VM ($P) via bastion ($B)..."
+    ssh -i {{KEY}} {{SSHOPT}} -J azureuser@$B azureuser@$P
+
+# SSH interactively into the BASTION host (allowed only from your IP). Type `exit` to leave.
+ssh-bastion:
+    $B = az deployment group show --resource-group {{RESOURCE_GROUP}} --name main --query properties.outputs.bastionPublicIp.value -o tsv
+    Write-Host "SSH into bastion ($B)..."
+    ssh -i {{KEY}} {{SSHOPT}} azureuser@$B
+
+# If your global IP changed (e.g. different Wi-Fi), refresh the bastion's allowed source IP so you can SSH again
+update-myip:
+    $MYIP = (Invoke-RestMethod -Uri 'https://api.ipify.org')
+    Write-Host "Updating nsg-bastion to allow SSH from $MYIP ..."
+    az network nsg rule update --resource-group {{RESOURCE_GROUP}} --nsg-name nsg-bastion --name Allow-SSH-From-MyIp --source-address-prefixes "$MYIP/32"
+
+# Delete resource group and all resources
+destroy:
+    az group delete --name {{RESOURCE_GROUP}} --yes --no-wait

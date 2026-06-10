@@ -1,0 +1,10 @@
+# コントロールプレーン (リソース作成): 管理 SDK
+azure-identity
+azure-mgmt-cognitiveservices~=13.7   # 13.7+ で Foundry の projects 操作に対応
+
+# データプレーン (エージェント作成・会話): Foundry projects 2.x API
+azure-ai-projects>=2.0.0             # 2.x は 1.x と非互換。プロンプトエージェントはこちら
+openai                               # project.get_openai_client() が返すクライアントの実体
+
+# 設定の読み込み
+python-dotenv                        # .env (このフォルダ直下) を環境変数として読む

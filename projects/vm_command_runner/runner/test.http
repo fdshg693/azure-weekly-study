@@ -1,0 +1,30 @@
+@functionAppName = func-vmcmd-xxxxx
+@host = https://{{functionAppName}}.azurewebsites.net
+@functionKey = REPLACE_WITH_FUNCTION_KEY
+
+### ステータス確認 (VM電源状態 + 最終アクセス時刻 + 許可コマンド)
+GET {{host}}/api/status?code={{functionKey}}
+
+### コマンド実行 (許可済 alias)
+POST {{host}}/api/run?code={{functionKey}}
+Content-Type: application/json
+
+{
+  "command": "uptime"
+}
+
+### 別コマンド
+POST {{host}}/api/run?code={{functionKey}}
+Content-Type: application/json
+
+{
+  "command": "df"
+}
+
+### 拒否されるケース (whitelist にない)
+POST {{host}}/api/run?code={{functionKey}}
+Content-Type: application/json
+
+{
+  "command": "rm -rf /"
+}

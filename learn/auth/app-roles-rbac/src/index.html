@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>認証から認可へ（App ロールで「何をしてよいか」を変える）</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; }
+    h1 { font-size: 1.4rem; }
+    #status { font-weight: bold; padding: .4rem .8rem; background: #f0f0f0; border-radius: 6px; display: inline-block; }
+    .buttons { margin: 1rem 0; display: flex; gap: .5rem; flex-wrap: wrap; }
+    button { padding: .5rem 1rem; font-size: 1rem; cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .5; }
+    pre { background: #1e1e1e; color: #d4d4d4; padding: 1rem; border-radius: 6px; overflow-x: auto; font-size: .85rem; }
+    .hint { background: #fffbe6; border: 1px solid #ffe58f; padding: .6rem .9rem; border-radius: 6px; font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <h1>認証から認可へ ― App ロールで「何をしてよいか」を変える</h1>
+  <p>同じユーザーでログインしても、割り当てられた <b>App ロール</b>（<code>Tasks.Read</code> / <code>Tasks.Write</code>）によって、呼べる API が変わります。
+     トークンに乗る <b><code>scp</code>（アプリの許可）</b>と <b><code>roles</code>（ユーザーの役割）</b>の違いに注目してください。</p>
+
+  <p class="hint">
+    ロールの割り当ては <code>task assign -- Tasks.Read</code> / <code>task assign -- Tasks.Write</code>、解除は <code>task unassign -- ...</code>。
+    変更後はこの SPA が<b>毎回トークンを強制リフレッシュ</b>するので、ボタンを押し直すと新しい <code>roles</code> が反映されます。
+  </p>
+
+  <p id="status">読み込み中...</p>
+
+  <div class="buttons">
+    <button id="login" disabled>ログイン</button>
+    <button id="me" disabled>自分の権限を見る（/api/me）</button>
+    <button id="readTasks" disabled>タスク一覧を見る（Tasks.Read 必要）</button>
+    <button id="writeTask" disabled>タスクを追加（Tasks.Write 必要）</button>
+    <button id="logout" disabled>ログアウト</button>
+  </div>
+
+  <h2>出力</h2>
+  <pre id="output"></pre>
+
+  <!--
+    読み込みの考え方は api-protect と同じ：
+      - MSAL（CDN・UMD）は classic script で先に読み、window.msal を生やす。
+      - アプリ側は ES モジュール。auth.js → authConfig.js → config.js（.env から `task config` で生成）。
+  -->
+  <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.7.1/lib/msal-browser.min.js"></script>
+  <script type="module" src="./auth.js"></script>
+</body>
+</html>

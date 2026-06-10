@@ -1,0 +1,119 @@
+RESOURCE_GROUP := "rg-azure-edge-learn"
+LOCATION := "japaneast"
+WAF_POLICY := "wafEdgePolicy"
+WORKSPACE := "log-edge"
+
+# 既定のタスク。利用可能なコマンド一覧を表示する
+default:
+    @just --list
+
+# Front Door の CLI コマンド(az afd / front-door)に必要な拡張機能を用意する
+ensure-ext:
+    @az extension add --upgrade -n front-door -o none 2>/dev/null || true
+
+# Bicep テンプレートをデプロイし、エンドポイント名などを保存する
+deploy: ensure-ext
+    @echo "Creating Resource Group: {{RESOURCE_GROUP}} in {{LOCATION}}..."
+    az group create --name {{RESOURCE_GROUP}} --location {{LOCATION}} -o none
+    @echo "Deploying Bicep template... (Front Door の伝播とオリジン Nginx 起動に数分かかります)"
+    az deployment group create \
+      --resource-group {{RESOURCE_GROUP}} \
+      --name main \
+      --template-file main.bicep \
+      --parameters wafMode=Prevention \
+      -o none
+    @az deployment group show -g {{RESOURCE_GROUP}} -n main --query properties.outputs.endpointHostName.value -o tsv > afd_host.txt
+    @az deployment group show -g {{RESOURCE_GROUP}} -n main --query properties.outputs.originPublicIp.value -o tsv > origin_ip.txt
+    @az monitor log-analytics workspace show -g {{RESOURCE_GROUP}} -n {{WORKSPACE}} --query customerId -o tsv > workspace_id.txt
+    @echo "Deployment completed."
+    @echo "  Front Door endpoint -> $(cat afd_host.txt)"
+    @echo "  Origin public IP    -> $(cat origin_ip.txt)"
+    @echo "Note: エッジへの反映に数分、オリジン Nginx 起動にも数分かかる場合があります。"
+
+# 構成情報（エンドポイント / オリジン IP）を表示する
+info:
+    @echo "Front Door endpoint : $(cat afd_host.txt 2>/dev/null || echo '(not deployed)')"
+    @echo "Origin public IP    : $(cat origin_ip.txt 2>/dev/null || echo '(not deployed)')"
+
+# 正常リクエスト: エッジ(Front Door)経由でオリジンまで届くことを確認する（200）
+test:
+    @if [ ! -f "afd_host.txt" ]; then echo "Error: afd_host.txt not found. run 'just deploy'"; exit 1; fi
+    @HOST=$(cat afd_host.txt); \
+    echo "Testing via edge: https://$HOST/"; \
+    curl -s -w "\nHTTP %{http_code}\n" --max-time 10 "https://$HOST/" || echo "Request failed"
+
+# オリジンの公開 IP へ直アクセスを試す（= エッジを通さない）
+# 既定では NSG が Front Door 以外を拒否しているのでタイムアウト/失敗するはず（エッジ経由の強制）
+test-direct:
+    @if [ ! -f "origin_ip.txt" ]; then echo "Error: origin_ip.txt not found. run 'just deploy'"; exit 1; fi
+    @IP=$(cat origin_ip.txt); \
+    echo "Testing direct origin access (bypassing edge): http://$IP/"; \
+    curl -s -w "\nHTTP %{http_code}\n" --max-time 8 "http://$IP/" || echo "Request failed (=直アクセスは遮断されている)"
+
+# 体積型攻撃の緩和を体感する: 短時間に大量のリクエストを送り、200 と 429 の数を数える
+# Prevention なら しきい値超過分が 429(Too Many Requests) に / Detection なら全て 200 になる
+flood COUNT="60":
+    @if [ ! -f "afd_host.txt" ]; then echo "Error: afd_host.txt not found. run 'just deploy'"; exit 1; fi
+    @HOST=$(cat afd_host.txt); \
+    echo "Sending {{COUNT}} requests to https://$HOST/ ..."; \
+    ok=0; limited=0; other=0; \
+    for i in $(seq 1 {{COUNT}}); do \
+      code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "https://$HOST/?n=$i"); \
+      if [ "$code" = "200" ]; then ok=$((ok+1)); \
+      elif [ "$code" = "429" ]; then limited=$((limited+1)); \
+      else other=$((other+1)); fi; \
+    done; \
+    echo "200 OK: $ok / 429 Too Many Requests: $limited / other: $other"; \
+    echo "(429 が出れば レート制限が効いている。1分の窓が空くとカウンタはリセットされる)"
+
+# WAF を Detection(検知＝ログのみ) に切り替える（再デプロイ不要）
+mode-detection: ensure-ext
+    az network front-door waf-policy update \
+      --name {{WAF_POLICY}} --resource-group {{RESOURCE_GROUP}} \
+      --mode Detection -o none
+    @echo "WAF mode -> Detection (検知のみ・ブロックしない)"
+
+# WAF を Prevention(防御＝実ブロック) に切り替える（再デプロイ不要）
+mode-prevention: ensure-ext
+    az network front-door waf-policy update \
+      --name {{WAF_POLICY}} --resource-group {{RESOURCE_GROUP}} \
+      --mode Prevention -o none
+    @echo "WAF mode -> Prevention (しきい値超過を 429 でブロック)"
+
+# 現在の WAF mode を表示する
+mode-show: ensure-ext
+    az network front-door waf-policy show \
+      --name {{WAF_POLICY}} --resource-group {{RESOURCE_GROUP}} \
+      --query "{mode:policySettings.mode, state:policySettings.enabledState}" -o table
+
+# オリジンへの「インターネット直アクセス」を一時的に開ける（NSG に Allow ルールを足す）
+unlock-origin:
+    az network nsg rule create \
+      --resource-group {{RESOURCE_GROUP}} --nsg-name nsg-origin \
+      --name Allow-Direct-Internet --priority 200 \
+      --access Allow --direction Inbound --protocol Tcp \
+      --source-address-prefixes Internet --source-port-ranges '*' \
+      --destination-port-ranges 80 --destination-address-prefixes '*' -o none
+    @echo "origin: インターネットからの 80 を許可した（test-direct が通るようになる）"
+
+# オリジンを再びエッジ経由のみに戻す（Allow ルールを外す）
+lock-origin:
+    az network nsg rule delete \
+      --resource-group {{RESOURCE_GROUP}} --nsg-name nsg-origin \
+      --name Allow-Direct-Internet -o none
+    @echo "origin: 直アクセスを塞いだ（Front Door 経由のみに戻した）"
+
+# WAF ログを確認する（レート制限の検知/ブロックの記録。反映まで数分のラグがある）
+logs:
+    @if [ ! -f "workspace_id.txt" ]; then echo "Error: workspace_id.txt not found. run 'just deploy'"; exit 1; fi
+    @WS=$(cat workspace_id.txt); \
+    az monitor log-analytics query -w $WS \
+      --analytics-query "AzureDiagnostics | where Category == 'FrontDoorWebApplicationFirewallLog' | project TimeGenerated, action_s, ruleName_s, clientIP_s, requestUri_s | order by TimeGenerated desc | take 20" \
+      -o table
+
+# リソースグループを削除し、環境をクリーンアップする
+cleanup:
+    @echo "Deleting Resource Group: {{RESOURCE_GROUP}}..."
+    az group delete --name {{RESOURCE_GROUP}} --yes --no-wait
+    @rm -f afd_host.txt origin_ip.txt workspace_id.txt
+    @echo "Cleanup initiated."

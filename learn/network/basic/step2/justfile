@@ -1,0 +1,31 @@
+set shell := ["powershell.exe", "-c"]
+
+# Variables
+RESOURCE_GROUP := "rg-network-learn-peering"
+LOCATION := "japaneast"
+
+# List available commands
+default:
+    @just --list
+
+# Create resource group and deploy resources
+deploy:
+    az group create --name {{RESOURCE_GROUP}} --location {{LOCATION}}
+    az deployment group create --resource-group {{RESOURCE_GROUP}} --template-file main.bicep
+
+# Test ping from VM1 to VM2 using private IP via Azure VM Run Command
+test-peering:
+    $VM2_IP = az deployment group show --resource-group {{RESOURCE_GROUP}} --name main --query properties.outputs.vm2PrivateIp.value -o tsv
+    Write-Host "Pinging VM2 ($VM2_IP) from VM1..."
+    az vm run-command invoke --resource-group {{RESOURCE_GROUP}} --name vm-1 --command-id RunShellScript --scripts "ping -c 4 $VM2_IP"
+
+# Test ping from local machine to VM2 to prove it fails
+test-local-fail:
+    $VM2_IP = az deployment group show --resource-group {{RESOURCE_GROUP}} --name main --query properties.outputs.vm2PrivateIp.value -o tsv
+    Write-Host "Pinging VM2's Private IP ($VM2_IP) from your local machine..."
+    Write-Host "This is EXPECTED TO FAIL because VM2 has no Public IP and is completely isolated from the Internet."
+    ping -n 4 $VM2_IP
+
+# Delete resource group and all resources
+destroy:
+    az group delete --name {{RESOURCE_GROUP}} --yes --no-wait

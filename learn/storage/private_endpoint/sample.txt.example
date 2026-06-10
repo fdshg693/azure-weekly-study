@@ -1,0 +1,11 @@
+This is a sample file for uploading to Azure Blob Storage via Private Endpoint.
+
+プライベートエンドポイント経由でAzure Blob Storageにアップロードされるサンプルファイルです。
+
+Content:
+- Created for testing private endpoint connectivity
+- Can be accessed only from within the Virtual Network
+- プライベートエンドポイントの接続テスト用
+- VNet内からのみアクセス可能
+
+Timestamp: 2025-11-11

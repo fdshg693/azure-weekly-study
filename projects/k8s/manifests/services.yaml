@@ -1,0 +1,25 @@
+# 内部向けの安定した入口。外部公開は Ingress に任せるので ClusterIP。
+# Deployment が貼ったラベル (app: api / app: front) を selector で指す。
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+spec:
+  selector:
+    app: api                 # この Deployment が貼ったラベルに流す
+  ports:
+    - port: 80
+      targetPort: 8080       # コンテナの containerPort
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: front
+spec:
+  selector:
+    app: front
+  ports:
+    - port: 80
+      targetPort: 80
+  type: ClusterIP

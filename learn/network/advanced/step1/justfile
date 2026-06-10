@@ -1,0 +1,102 @@
+RESOURCE_GROUP := "rg-azure-waf-learn"
+LOCATION := "japaneast"
+WAF_POLICY := "waf-policy"
+WORKSPACE := "log-waf"
+# 学習用の自己署名証明書のパスワード（本番では Key Vault などで管理する）
+CERT_PASSWORD := "WafLearn123!"
+
+# 既定のタスク。利用可能なコマンド一覧を表示する
+default:
+    @just --list
+
+# 学習用の自己署名証明書(PFX)を生成する。TLS 終端の証明書として使う
+cert:
+    @if [ ! -f "appgw-cert.pfx" ]; then \
+        echo "Generating self-signed certificate (appgw-cert.pfx)..."; \
+        openssl req -x509 -nodes -newkey rsa:2048 \
+          -keyout appgw-cert.key -out appgw-cert.crt -days 365 \
+          -subj "/CN=appgw.example.local"; \
+        openssl pkcs12 -export -out appgw-cert.pfx \
+          -inkey appgw-cert.key -in appgw-cert.crt \
+          -passout pass:{{CERT_PASSWORD}}; \
+        echo "Created appgw-cert.pfx"; \
+    else \
+        echo "appgw-cert.pfx already exists. Skipping."; \
+    fi
+
+# Bicep テンプレートをデプロイする（証明書が無ければ自動生成）
+deploy: cert
+    @echo "Creating Resource Group: {{RESOURCE_GROUP}} in {{LOCATION}}..."
+    az group create --name {{RESOURCE_GROUP}} --location {{LOCATION}} -o none
+    @echo "Deploying Bicep template... (Application Gateway WAF_v2 のデプロイには 5〜10 分かかります)"
+    @CERT_DATA=$$(base64 -w0 appgw-cert.pfx); \
+    az deployment group create \
+      --resource-group {{RESOURCE_GROUP}} \
+      --template-file main.bicep \
+      --parameters certData=$$CERT_DATA certPassword='{{CERT_PASSWORD}}' wafMode=Prevention \
+      -o none
+    @az network public-ip show -g {{RESOURCE_GROUP}} -n pip-appgw --query ipAddress -o tsv > appgw_ip.txt
+    @az monitor log-analytics workspace show -g {{RESOURCE_GROUP}} -n {{WORKSPACE}} --query customerId -o tsv > workspace_id.txt
+    @echo "Deployment completed. Public IP は appgw_ip.txt に保存しました。"
+    @echo "Note: バックエンド Nginx の起動とヘルスチェック成立まで数分かかる場合があります。"
+
+# 正常なリクエストを送る（HTTPS / 自己署名なので -k で証明書検証をスキップ）
+# 入口で TLS 終端されていること・バックエンドまで届くことを確認する
+test:
+    @if [ ! -f "appgw_ip.txt" ]; then echo "Error: appgw_ip.txt not found. run 'just deploy'"; exit 1; fi
+    @IP=$$(cat appgw_ip.txt); \
+    echo "Testing HTTPS at https://$$IP/ (TLS 終端の確認)"; \
+    echo "--- normal request: GET / ---"; \
+    curl -sk -w "\nHTTP %{http_code}\n" --connect-timeout 5 "https://$$IP/" || echo "Request failed"
+
+# 悪性っぽいリクエスト(SQLi パターン)を送る
+# Prevention なら 403 で実ブロック / Detection ならバックエンドまで届き 200(ログのみ)
+attack:
+    @if [ ! -f "appgw_ip.txt" ]; then echo "Error: appgw_ip.txt not found. run 'just deploy'"; exit 1; fi
+    @IP=$$(cat appgw_ip.txt); \
+    echo "Sending malicious-looking request (SQLi pattern) to https://$$IP/"; \
+    echo "--- GET /?id=1' OR '1'='1 ---"; \
+    curl -sk -w "\nHTTP %{http_code}\n" --connect-timeout 5 "https://$$IP/?id=1%27%20OR%20%271%27=%271" || echo "Request failed"
+
+# WAF を Detection(検知＝ログのみ) に切り替える（再デプロイ不要）
+mode-detection:
+    az network application-gateway waf-policy policy-setting update \
+      --policy-name {{WAF_POLICY}} --resource-group {{RESOURCE_GROUP}} \
+      --mode Detection --state Enabled -o none
+    @echo "WAF mode -> Detection (検知のみ・ブロックしない)"
+
+# WAF を Prevention(防御＝実ブロック) に切り替える（再デプロイ不要）
+mode-prevention:
+    az network application-gateway waf-policy policy-setting update \
+      --policy-name {{WAF_POLICY}} --resource-group {{RESOURCE_GROUP}} \
+      --mode Prevention --state Enabled -o none
+    @echo "WAF mode -> Prevention (実ブロック)"
+
+# 現在の WAF mode を表示する
+mode-show:
+    az network application-gateway waf-policy policy-setting list \
+      --policy-name {{WAF_POLICY}} --resource-group {{RESOURCE_GROUP}} \
+      --query "{mode:mode, state:state}" -o table
+
+# WAF ログを確認する（検知/ブロックの記録。反映まで数分のラグがある）
+logs:
+    @if [ ! -f "workspace_id.txt" ]; then echo "Error: workspace_id.txt not found. run 'just deploy'"; exit 1; fi
+    @WS=$$(cat workspace_id.txt); \
+    az monitor log-analytics query -w $$WS \
+      --analytics-query "AzureDiagnostics | where Category == 'ApplicationGatewayFirewallLog' | project TimeGenerated, action_s, ruleId_s, Message, requestUri_s | order by TimeGenerated desc | take 20" \
+      -o table
+
+# Application Gateway から見たバックエンドの健全性を確認する
+health:
+    az network application-gateway show-backend-health \
+      --resource-group {{RESOURCE_GROUP}} \
+      --name appgw-waf \
+      --query "backendAddressPools[].backendHttpSettingsCollection[].servers[].{address:address, health:health}" \
+      -o table
+
+# リソースグループを削除し、環境をクリーンアップする
+cleanup:
+    @echo "Deleting Resource Group: {{RESOURCE_GROUP}}..."
+    az group delete --name {{RESOURCE_GROUP}} --yes --no-wait
+    @rm -f appgw_ip.txt workspace_id.txt appgw-cert.key appgw-cert.crt appgw-cert.pfx
+    @echo "Cleanup initiated."

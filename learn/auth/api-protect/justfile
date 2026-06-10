@@ -1,0 +1,76 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+# 2 つのアプリ登録（自前 API ＝ リソースサーバー／SPA ＝ クライアント）の表示名と、
+# ローカル配信のポート・リダイレクト URI・API のポート。
+api_name := "api-protect-api"
+spa_name := "api-protect-spa"
+redirect := "http://localhost:5173"
+port     := "5173"
+api_port := "3000"
+
+default:
+  @just --list
+
+# ① Entra に「自前 API」と「SPA」の 2 つのアプリ登録を作る（ユーザーが一度だけ実行）。
+#    - 自前 API：Application ID URI を api://<appId> にし、委任スコープ access_as_user を公開（Expose an API）。
+#                requestedAccessTokenVersion=2 で v2 トークン（iss=.../v2.0）を発行させる。
+#    - SPA    ：SPA プラットフォームに redirect URI を登録し、上の API スコープへの許可（requiredResourceAccess）を持たせる。
+#    az ad app create は SPA / Expose an API 用フラグを持たないため、作成後に Microsoft Graph を az rest で PATCH する。
+#    1 プロセス内でスコープの GUID を共有するため、両方の作成・配線をこの 1 レシピで行う。
+#    また az ad app create は「アプリ登録（アプリケーション オブジェクト）」しか作らず、テナント内に
+#    サービス プリンシパル（エンタープライズ アプリ）を作らない。SP が無いと SPA が自前 API 宛トークンを
+#    要求した際に AADSTS650052（service principal が無い）で失敗するため、両アプリに az ad sp create を行う。
+register:
+  @Write-Host "① 自前 API のアプリ登録を作成中..." -ForegroundColor Cyan; \
+   $api = (az ad app create --display-name "{{api_name}}" --sign-in-audience AzureADMyOrg --query "{appId:appId,id:id}" -o json | ConvertFrom-Json); \
+   $scopeId = [guid]::NewGuid().Guid; \
+   $apiBody = @{ identifierUris = @("api://$($api.appId)"); api = @{ requestedAccessTokenVersion = 2; oauth2PermissionScopes = @(@{ id = $scopeId; value = "access_as_user"; type = "User"; isEnabled = $true; adminConsentDisplayName = "API にユーザーとしてアクセス"; adminConsentDescription = "サインイン中のユーザーとして自前 API へアクセスすることを許可します。"; userConsentDisplayName = "API にあなたとしてアクセス"; userConsentDescription = "あなたとして自前 API へアクセスすることを許可します。" }) } } | ConvertTo-Json -Depth 8; \
+   Set-Content -Path api.json -Encoding utf8 -Value $apiBody; \
+   az rest --method PATCH --url "https://graph.microsoft.com/v1.0/applications/$($api.id)" --headers "Content-Type=application/json" --body "@api.json" | Out-Null; \
+   Remove-Item api.json; \
+   Write-Host "  自前 API のサービス プリンシパルを作成中..." -ForegroundColor Cyan; \
+   az ad sp create --id $api.appId | Out-Null; \
+   Write-Host "② SPA のアプリ登録を作成中..." -ForegroundColor Cyan; \
+   $spa = (az ad app create --display-name "{{spa_name}}" --sign-in-audience AzureADMyOrg --query "{appId:appId,id:id}" -o json | ConvertFrom-Json); \
+   $spaBody = @{ spa = @{ redirectUris = @("{{redirect}}") }; requiredResourceAccess = @(@{ resourceAppId = $api.appId; resourceAccess = @(@{ id = $scopeId; type = "Scope" }) }) } | ConvertTo-Json -Depth 8; \
+   Set-Content -Path spa.json -Encoding utf8 -Value $spaBody; \
+   az rest --method PATCH --url "https://graph.microsoft.com/v1.0/applications/$($spa.id)" --headers "Content-Type=application/json" --body "@spa.json" | Out-Null; \
+   Remove-Item spa.json; \
+   Write-Host "  SPA のサービス プリンシパルを作成中..." -ForegroundColor Cyan; \
+   az ad sp create --id $spa.appId | Out-Null; \
+   Write-Host "`n--- .env に設定する値 ---" -ForegroundColor Green; \
+   Write-Host "  API_CLIENT_ID = $($api.appId)"; \
+   Write-Host "  SPA_CLIENT_ID = $($spa.appId)"; \
+   Write-Host "  TENANT_ID     = （just tenant の出力）"; \
+   Write-Host "`napiScope（= api://$($api.appId)/access_as_user）は just config が自動生成します。" -ForegroundColor Yellow
+
+# 現在 az でログイン中のテナント ID を表示する（.env の TENANT_ID 用）。
+tenant:
+  @az account show --query tenantId -o tsv
+
+# ② .env から src/config.js を生成する（SPA に tenantId / spaClientId / apiScope / apiBaseUrl / redirectUri を渡す）。
+#    apiScope は API_CLIENT_ID から組み立てる（api://<API_CLIENT_ID>/access_as_user）。
+config:
+  @if (-not (Test-Path .env)) { Write-Error ".env がありません。.env.example をコピーして値を入れてください。"; exit 1 }
+  @$e=@{}; Get-Content .env | Where-Object { $_ -match '^\s*[^#].*=' } | ForEach-Object { $k,$v = $_ -split '=',2; $e[$k.Trim()]=$v.Trim() }; \
+   $scope = "api://$($e.API_CLIENT_ID)/access_as_user"; \
+   "export const APP_CONFIG = { tenantId: '$($e.TENANT_ID)', spaClientId: '$($e.SPA_CLIENT_ID)', apiScope: '$scope', apiBaseUrl: '$($e.API_BASE_URL)', redirectUri: '$($e.REDIRECT_URI)' };" | Set-Content -Encoding utf8 src/config.js; \
+   Write-Host "src/config.js を生成しました。" -ForegroundColor Green
+
+# ③-A 自前 API（リソースサーバー）を起動する。初回は jose を npm install。Ctrl+C で停止。
+api:
+  @if (-not (Test-Path api/node_modules)) { Write-Host "依存をインストール中 (jose)..." -ForegroundColor Cyan; Push-Location api; npm install; Pop-Location }
+  @Write-Host "自前 API を http://localhost:{{api_port}} で起動します（Ctrl+C で停止）。別ターミナルで just serve を実行してください。" -ForegroundColor Cyan
+  @node api/server.js
+
+# ③-B SPA をローカル配信してブラウザで開く（config 生成も実施）。Ctrl+C で停止。
+#    ※ 自前 API を呼ぶには、別ターミナルで just api を起動しておくこと。
+serve: config
+  @Write-Host "http://localhost:{{port}} を開いてください（Ctrl+C で停止）。API を呼ぶには別ターミナルで just api。" -ForegroundColor Cyan
+  @python -m http.server {{port}} --directory src
+
+# 後片付け：2 つのアプリ登録を削除する（.env の SPA_CLIENT_ID / API_CLIENT_ID を使用）。
+unregister:
+  @$e=@{}; Get-Content .env | Where-Object { $_ -match '^\s*[^#].*=' } | ForEach-Object { $k,$v = $_ -split '=',2; $e[$k.Trim()]=$v.Trim() }; \
+   if ($e.SPA_CLIENT_ID) { az ad app delete --id $e.SPA_CLIENT_ID; Write-Host "SPA アプリ登録を削除しました。" -ForegroundColor Green }; \
+   if ($e.API_CLIENT_ID) { az ad app delete --id $e.API_CLIENT_ID; Write-Host "API アプリ登録を削除しました。" -ForegroundColor Green }

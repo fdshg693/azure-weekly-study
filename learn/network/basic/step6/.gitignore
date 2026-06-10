@@ -1,0 +1,4 @@
+# SSH key pair generated locally by `just deploy` / `just keygen`.
+# NEVER commit the private key.
+azbastion_key
+azbastion_key.pub

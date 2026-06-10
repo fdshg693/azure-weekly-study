@@ -1,0 +1,43 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+# アプリ登録の表示名・リダイレクト URI・ローカル配信ポート。
+app_name := "entra-spa-login"
+redirect := "http://localhost:5173"
+port := "5173"
+
+default:
+  @just --list
+
+# ① Entra にアプリ登録を作成する（ユーザーが一度だけ実行）。
+#    single tenant（自テナントのみ）で作成 → SPA プラットフォームに redirect URI を登録。
+#    `az ad app create` は SPA 用フラグを持たないため、まずアプリを作り、
+#    その後 Microsoft Graph の `spa.redirectUris` を az rest で PATCH する。
+#    出力された appId を .env の CLIENT_ID に控える。
+register:
+  @$app = (az ad app create --display-name "{{app_name}}" --sign-in-audience AzureADMyOrg --query "{appId:appId, id:id}" -o json | ConvertFrom-Json); \
+   Set-Content -Path spa.json -Encoding utf8 -Value '{"spa":{"redirectUris":["{{redirect}}"]}}'; \
+   az rest --method PATCH --url "https://graph.microsoft.com/v1.0/applications/$($app.id)" --headers "Content-Type=application/json" --body "@spa.json" | Out-Null; \
+   Remove-Item spa.json; \
+   Write-Host "`nappId: $($app.appId)" -ForegroundColor Green; \
+   Write-Host "↑の appId を .env の CLIENT_ID に、`just tenant` の値を TENANT_ID に設定してください。" -ForegroundColor Yellow
+
+# 現在 az でログイン中のテナント ID を表示する（.env の TENANT_ID 用）。
+tenant:
+  @az account show --query tenantId -o tsv
+
+# ② .env から src/config.js を生成する（clientId / tenantId / redirectUri を SPA へ渡す）。
+config:
+  @if (-not (Test-Path .env)) { Write-Error ".env がありません。`.env.example` をコピーして値を入れてください。"; exit 1 }
+  @$e=@{}; Get-Content .env | Where-Object { $_ -match '^\s*[^#].*=' } | ForEach-Object { $k,$v = $_ -split '=',2; $e[$k.Trim()]=$v.Trim() }; "export const APP_CONFIG = { tenantId: '$($e.TENANT_ID)', clientId: '$($e.CLIENT_ID)', redirectUri: '$($e.REDIRECT_URI)' };" | Set-Content -Encoding utf8 src/config.js; Write-Host "src/config.js を生成しました。" -ForegroundColor Green
+
+# ③ ローカル配信してブラウザで開く（config 生成も実施）。Ctrl+C で停止。
+serve: config
+  @Write-Host "http://localhost:{{port}} を開いてください（Ctrl+C で停止）。" -ForegroundColor Cyan
+  @python -m http.server {{port}} --directory src
+
+# serve の別名（プランの呼び名に合わせたショートカット）。
+login: serve
+
+# 後片付け：アプリ登録を削除する（.env の CLIENT_ID を使用）。
+unregister:
+  @$e=@{}; Get-Content .env | Where-Object { $_ -match '^\s*[^#].*=' } | ForEach-Object { $k,$v = $_ -split '=',2; $e[$k.Trim()]=$v.Trim() }; az ad app delete --id $e.CLIENT_ID; Write-Host "アプリ登録を削除しました。" -ForegroundColor Green

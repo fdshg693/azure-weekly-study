@@ -1,0 +1,51 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+# venv の Python。venv レシピで作成される。
+py := ".venv/Scripts/python.exe"
+
+# Foundry User ロール定義 ID (旧 Azure AI User)。ロール名は改称中のため GUID 固定で使う。
+foundry_user_role := "53ca6127-db72-4b80-b1b0-d745d6d5456d"
+
+default:
+  @just --list
+
+# ローカル実行用の venv を作り、管理 SDK + データプレーン SDK を入れる。
+venv:
+  @python -m venv .venv; {{py}} -m pip install --upgrade pip; {{py}} -m pip install -r requirements.txt
+
+# このプロジェクト用のリソースグループを作る (任意。provision 前に一度)。
+group-create resource_group="rg-foundry-agent" location="eastus2":
+  @az group create --name {{resource_group}} --location {{location}}
+
+# 0) Python 管理 SDK で account + project + model deployment を作り config.json を書く。
+#    設定は .env (このフォルダ直下) か環境変数で渡す。サブスクリプションは未指定なら
+#    az の既定サブスクリプションを使う (00_provision.py が解決)。
+provision:
+  @{{py}} 00_provision.py
+
+# サインイン中の自分に project スコープの Foundry User ロールを付ける。
+#   ※ azure-mgmt-cognitiveservices はロール割当を扱えないため、ここだけ az に頼る
+#     (azure-mgmt-authorization を使えば Python 化も可能。README 参照)。
+#   ※ 反映に 1〜2 分かかることがある。create-agent が 403 なら少し待って再実行。
+grant-role:
+  @$c = Get-Content config.json | ConvertFrom-Json; $scope = (az cognitiveservices account project show --name $c.account_name --resource-group $c.resource_group --project-name $c.project_name --query id -o tsv); $me = (az ad signed-in-user show --query id -o tsv); az role assignment create --role {{foundry_user_role}} --assignee-object-id $me --assignee-principal-type User --scope $scope
+
+# 1) プロンプトエージェントを作成する (データプレーン)。
+create-agent:
+  @{{py}} 01_create_agent.py
+
+# 2) エージェントと 2 ターン会話する。
+chat:
+  @{{py}} 02_chat.py
+
+# provision → grant-role → create-agent → chat を一気に実行する。
+all:
+  @just provision; just grant-role; just create-agent; just chat
+
+# 作成したリソースを個別に削除する (deployment → project → account)。
+cleanup:
+  @{{py}} 99_cleanup.py
+
+# リソースグループごと削除する (一番確実・速い。配下のデプロイ等もまとめて消える)。
+destroy resource_group="rg-foundry-agent":
+  @az group delete --name {{resource_group}} --yes --no-wait

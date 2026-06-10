@@ -1,0 +1,7 @@
+# エフェメラルエージェント = Agent Framework (FoundryChatClient) でローカル実行する。
+# 公式クイックスタートの推奨パス。Foundry リソースは作らない（変数注入のみ）。
+agent-framework-foundry   # FoundryChatClient / Agent / @tool / get_web_search_tool を提供
+aiohttp                   # FoundryChatClient が内部で使う非同期 HTTP クライアント
+azure-identity            # AzureCliCredential（az login 済みの資格情報を使う）
+pydantic                  # @tool の引数説明に使う Field（agent-framework が依存）
+python-dotenv             # .env（このフォルダ直下）を環境変数として読む

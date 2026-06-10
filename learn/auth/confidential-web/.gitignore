@@ -1,0 +1,5 @@
+# 実際の設定値（.env.example を雛形にユーザーが作成）。★ CLIENT_SECRET を含むので絶対にコミットしない。
+.env
+
+# サーバーの依存（task run で npm install される）
+server/node_modules

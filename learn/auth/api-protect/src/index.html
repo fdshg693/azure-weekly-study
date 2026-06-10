@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>自前 API を守る（リソースサーバー最小サンプル）</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; }
+    h1 { font-size: 1.4rem; }
+    #status { font-weight: bold; padding: .4rem .8rem; background: #f0f0f0; border-radius: 6px; display: inline-block; }
+    .buttons { margin: 1rem 0; display: flex; gap: .5rem; flex-wrap: wrap; }
+    button { padding: .5rem 1rem; font-size: 1rem; cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .5; }
+    pre { background: #1e1e1e; color: #d4d4d4; padding: 1rem; border-radius: 6px; overflow-x: auto; font-size: .85rem; }
+  </style>
+</head>
+<body>
+  <h1>自前 API を守る（リソースサーバー最小サンプル）</h1>
+  <p>SPA からログインし、<b>自前 API 宛</b>のアクセストークンを取得して、保護された API（<code>/api/me</code>）を呼びます。API 側はトークンの署名・aud・scp を検証します。</p>
+
+  <p id="status">読み込み中...</p>
+
+  <div class="buttons">
+    <button id="login" disabled>ログイン</button>
+    <button id="callApi" disabled>自前 API を呼ぶ</button>
+    <button id="callApiNoToken" disabled>トークン無しで呼ぶ（401 を観察）</button>
+    <button id="logout" disabled>ログアウト</button>
+  </div>
+
+  <h2>出力</h2>
+  <pre id="output"></pre>
+
+  <!--
+    読み込みの考え方は entra-spa-login と同じ：
+      - MSAL（CDN・UMD）は classic script で先に読み、window.msal を生やす。
+      - アプリ側は ES モジュール。auth.js → authConfig.js → config.js（.env から `just config` で生成）と
+        import が連なり、どの値がどこから来るかを明示する。
+  -->
+  <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.7.1/lib/msal-browser.min.js"></script>
+  <script type="module" src="./auth.js"></script>
+</body>
+</html>

@@ -1,0 +1,55 @@
+*.env
+*.zip
+*.log
+
+# ======= Bicep ======= 
+
+# ARM 生成物
+**/main.json
+
+# ローカル専用の Bicep パラメータ
+**/*.local.bicepparam
+
+# ローカルで API キーを書き込む REST Client 用ファイル
+**/*.local.http
+
+# scratch や検証用の JSON ダンプ
+**/_scratch*.json
+
+# Ignore any local variable files
+local.tfvars
+*.local.tfvars
+
+# Bicep のローカルパラメータ (機密値を含む)
+*.local.bicepparam
+
+
+# ======= Python ======= 
+
+__pycache__/
+.venv/
+
+# ======= Terraform ======= 
+
+# Local .terraform directories
+**/.terraform/*
+
+# .tfstate files
+*.tfstate
+*.tfstate.*
+*.tfvars
+
+# Exclude all .tfvars files, which are likely to contain sensitive data
+*.tfvars
+!*.dev.tfvars
+*.tfvars.json
+
+# Include tfplan files to ignore the plan output of command: terraform plan -out=tfplan
+*tfplan*
+
+# Ignore CLI configuration files
+.terraformrc
+terraform.rc
+
+# Ignore cache files
+.terraform.lock.hcl

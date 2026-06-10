@@ -1,0 +1,13 @@
+{
+  "name": "app-roles-rbac-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "自前 API（リソースサーバー）— アクセストークンを署名 / aud / scp で検証し、さらに roles クレームでエンドポイントごとの認可を行う最小実装",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "jose": "^5.9.6"
+  }
+}

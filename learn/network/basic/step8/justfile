@@ -1,0 +1,77 @@
+set shell := ["powershell.exe", "-c"]
+
+# Variables
+RESOURCE_GROUP := "rg-network-learn-privatelink"
+LOCATION := "japaneast"
+ZONE := "privatelink.blob.core.windows.net"
+VNET := "vnet-privatelink"
+LINK := "link-to-vnet"
+VM := "vm"
+
+# List available commands
+default:
+    @just --list
+
+# Create resource group and deploy resources
+# (VNet + 2 subnets, Storage(public access DISABLED), Private Endpoint, Private DNS Zone + link + zone group, VM).
+deploy:
+    az group create --name {{RESOURCE_GROUP}} --location {{LOCATION}}
+    az deployment group create --resource-group {{RESOURCE_GROUP}} --template-file main.bicep
+
+# Show the storage account (public access), the Private Endpoint (connection state), and the DNS zone link.
+info:
+    $sa = (az storage account list --resource-group {{RESOURCE_GROUP}} --query "[0].name" --output tsv)
+    Write-Host "--- Storage account (publicNetworkAccess = 公開エンドポイントの開閉) ---"
+    az storage account show --resource-group {{RESOURCE_GROUP}} --name $sa --query "{name:name, publicAccess:publicNetworkAccess, allowBlobPublicAccess:allowBlobPublicAccess}" --output table
+    Write-Host "--- Private Endpoint (pe-blob の接続状態) ---"
+    az network private-endpoint show --resource-group {{RESOURCE_GROUP}} --name pe-blob --query "{name:name, subnet:subnet.id, connState:privateLinkServiceConnections[0].privateLinkServiceConnectionState.status}" --output table
+    Write-Host "--- Private DNS Zone link (このリンクがあると公開FQDNがプライベートIPに解決される) ---"
+    az network private-dns link vnet list --resource-group {{RESOURCE_GROUP}} --zone-name {{ZONE}} --query "[].{name:name, state:virtualNetworkLinkState}" --output table
+
+# Show the A record that the Private DNS Zone Group auto-created: <account> -> Private Endpoint の PRIVATE IP.
+show-records:
+    Write-Host "--- A records in {{ZONE}} (Private Endpoint の IP が自動登録されている) ---"
+    az network private-dns record-set a list --resource-group {{RESOURCE_GROUP}} --zone-name {{ZONE}} --query "[].{name:name, ip:join(',', aRecords[].ipv4Address)}" --output table
+
+# CORE: from the VM, resolve the storage's PUBLIC FQDN. With the Private DNS Zone linked, it resolves to a
+# PRIVATE IP (10.0.1.x = the Private Endpoint), and an HTTPS request reaches the service over that private path.
+test-private:
+    $sa = (az storage account list --resource-group {{RESOURCE_GROUP}} --query "[0].name" --output tsv)
+    $fqdn = "$sa.blob.core.windows.net"
+    Write-Host "Storage FQDN: $fqdn  (URL は公開エンドポイントと同じ。向き先だけが変わる)"
+    Write-Host "--- VM 上で名前解決 + 接続（IP が 10.0.1.x なら Private Endpoint 経由）---"
+    az vm run-command invoke --resource-group {{RESOURCE_GROUP}} --name {{VM}} --command-id RunShellScript --scripts "echo '=== getent hosts (name -> IP) ==='; getent hosts $fqdn; echo '=== curl (どれかの HTTP コードが返れば=サービスに到達できた) ==='; curl -sS -o /dev/null -w 'HTTP %{http_code}\n' --max-time 15 https://$fqdn/ || echo 'curl failed (到達できず)'"
+
+# CONTRAST (name resolution): delete the Private DNS Zone <-> VNet link.
+# The same public FQDN now resolves to the storage's PUBLIC IP again (公衆 DNS の答え).
+# Run `just test-private` after this: getent shows a PUBLIC IP instead of 10.0.1.x.
+unlink:
+    Write-Host "Deleting the Private DNS Zone link '{{LINK}}' (VNet からゾーンが見えなくなる)..."
+    az network private-dns link vnet delete --resource-group {{RESOURCE_GROUP}} --zone-name {{ZONE}} --name {{LINK}} --yes
+    Write-Host "Removed. Now 'just test-private' resolves the name to a PUBLIC IP (no longer 10.0.1.x)."
+
+# Restore private resolution: re-create the Private DNS Zone <-> VNet link (registration OFF).
+# The public FQDN resolves back to the Private Endpoint's PRIVATE IP.
+link:
+    Write-Host "Re-creating the Private DNS Zone link '{{LINK}}'..."
+    az network private-dns link vnet create --resource-group {{RESOURCE_GROUP}} --zone-name {{ZONE}} --name {{LINK}} --virtual-network {{VNET}} --registration-enabled false
+    Write-Host "Restored. 'just test-private' resolves the name back to the private 10.0.1.x again."
+
+# CONTRAST (public door): close the storage's public endpoint. Independent of name resolution.
+# The Private Endpoint path keeps working; only the public internet entrance is shut.
+disable-public:
+    $sa = (az storage account list --resource-group {{RESOURCE_GROUP}} --query "[0].name" --output tsv)
+    Write-Host "Disabling publicNetworkAccess on $sa (公開エンドポイントを閉じる)..."
+    az storage account update --resource-group {{RESOURCE_GROUP}} --name $sa --public-network-access Disabled --output none
+    Write-Host "Done. 公開 IP 側からは弾かれる。Private Endpoint 経由（プライベートIP）は引き続き到達できる。"
+
+# Re-open the storage's public endpoint (for contrast). Now BOTH public and private paths can reach it.
+enable-public:
+    $sa = (az storage account list --resource-group {{RESOURCE_GROUP}} --query "[0].name" --output tsv)
+    Write-Host "Enabling publicNetworkAccess on $sa (公開エンドポイントを開ける)..."
+    az storage account update --resource-group {{RESOURCE_GROUP}} --name $sa --public-network-access Enabled --output none
+    Write-Host "Done. 公開エンドポイントが再び開いた。"
+
+# Delete resource group and all resources.
+destroy:
+    az group delete --name {{RESOURCE_GROUP}} --yes --no-wait

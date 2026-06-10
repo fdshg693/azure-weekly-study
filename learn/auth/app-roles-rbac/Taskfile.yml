@@ -1,0 +1,62 @@
+# Taskfile（https://taskfile.dev）。
+# PowerShell の実体は scripts/*.ps1 に切り出し、ここからは呼び出すだけにしてある
+# （巨大ワンライナーを避け、各操作を素直な .ps1 として読めるようにするため）。
+# 引数を渡すタスク（assign / unassign）は `task assign -- Tasks.Read` のように `--` の後ろに渡す。
+version: '3'
+
+vars:
+  PORT: '5173'
+  API_PORT: '3000'
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  register:
+    desc: Entra に「自前 API（App ロール込み）」と「SPA」の 2 つのアプリ登録を作成・配線する（一度だけ）
+    cmds:
+      - pwsh -NoProfile -File scripts/register.ps1
+
+  tenant:
+    desc: 現在 az でログイン中のテナント ID を表示する（.env の TENANT_ID 用）
+    cmds:
+      - az account show --query tenantId -o tsv
+
+  assign:
+    desc: 'サインイン中ユーザーに App ロールを割り当てる（例: task assign -- Tasks.Read）'
+    cmds:
+      - pwsh -NoProfile -File scripts/assign-role.ps1 -Role '{{.CLI_ARGS}}'
+
+  unassign:
+    desc: 'サインイン中ユーザーから App ロールを解除する（例: task unassign -- Tasks.Write）'
+    cmds:
+      - pwsh -NoProfile -File scripts/unassign-role.ps1 -Role '{{.CLI_ARGS}}'
+
+  roles:
+    desc: サインイン中ユーザーに割り当て済みの App ロールを一覧する
+    cmds:
+      - pwsh -NoProfile -File scripts/list-roles.ps1
+
+  config:
+    desc: .env から src/config.js を生成する
+    cmds:
+      - pwsh -NoProfile -File scripts/gen-config.ps1
+
+  api:
+    desc: 自前 API（リソースサーバー）を起動する（初回は jose を npm install）。Ctrl+C で停止
+    cmds:
+      - pwsh -NoProfile -Command "if (-not (Test-Path api/node_modules)) { Write-Host '依存をインストール中 (jose)...' -ForegroundColor Cyan; Push-Location api; npm install; Pop-Location }"
+      - node api/server.js
+
+  serve:
+    desc: SPA をローカル配信する（config 生成も実施）。API を呼ぶには別ターミナルで task api。Ctrl+C で停止
+    deps: [config]
+    cmds:
+      - python -m http.server {{.PORT}} --directory src
+
+  unregister:
+    desc: 2 つのアプリ登録を削除する（.env の SPA_CLIENT_ID / API_CLIENT_ID を使用）
+    cmds:
+      - pwsh -NoProfile -File scripts/unregister.ps1

@@ -1,0 +1,13 @@
+{
+  "name": "api-protect-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "自前 API（リソースサーバー）— Entra のアクセストークンを署名 / aud / scp で検証する最小実装",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "jose": "^5.9.6"
+  }
+}

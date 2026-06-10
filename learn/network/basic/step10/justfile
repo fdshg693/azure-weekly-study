@@ -1,0 +1,51 @@
+RESOURCE_GROUP := "rg-azure-appgw-learn"
+LOCATION := "japaneast"
+
+# 既定のタスク。利用可能なコマンド一覧を表示する
+default:
+    @just --list
+
+# Bicep テンプレートをデプロイする
+deploy:
+    @echo "Creating Resource Group: {{RESOURCE_GROUP}} in {{LOCATION}}..."
+    az group create --name {{RESOURCE_GROUP}} --location {{LOCATION}} -o none
+    @echo "Deploying Bicep template... (Application Gateway のデプロイには数分かかります)"
+    az deployment group create \
+      --resource-group {{RESOURCE_GROUP}} \
+      --template-file main.bicep \
+      --query "properties.outputs.appGatewayPublicIp.value" \
+      --output tsv > appgw_ip.txt
+    @echo "Deployment completed successfully!"
+    @echo "Application Gateway Public IP is saved in appgw_ip.txt."
+    @echo "Note: バックエンド VM の Nginx 起動とヘルスチェック成立までに数分かかる場合があります。"
+
+# パスごとに HTTP リクエストを送り、L7 ルーティングの様子を確認する
+test:
+    @if [ ! -f "appgw_ip.txt" ]; then \
+        echo "Error: appgw_ip.txt not found. Did you run 'just deploy'?"; \
+        exit 1; \
+    fi
+    @IP=$$(cat appgw_ip.txt); \
+    echo "Testing Application Gateway at http://$$IP"; \
+    echo "----------------------------------------"; \
+    echo "--- GET / ---"; \
+    curl -s --connect-timeout 5 "http://$$IP/" || echo "Request failed"; \
+    echo "--- GET /web/ ---"; \
+    curl -s --connect-timeout 5 "http://$$IP/web/" || echo "Request failed"; \
+    echo "--- GET /api/ ---"; \
+    curl -s --connect-timeout 5 "http://$$IP/api/" || echo "Request failed"
+
+# Application Gateway から見たバックエンドの健全性を確認する
+health:
+    az network application-gateway show-backend-health \
+      --resource-group {{RESOURCE_GROUP}} \
+      --name appgw \
+      --query "backendAddressPools[].backendHttpSettingsCollection[].servers[].{address:address, health:health}" \
+      -o table
+
+# リソースグループを削除し、環境をクリーンアップする
+cleanup:
+    @echo "Deleting Resource Group: {{RESOURCE_GROUP}}..."
+    az group delete --name {{RESOURCE_GROUP}} --yes --no-wait
+    @rm -f appgw_ip.txt
+    @echo "Cleanup initiated."

@@ -1,0 +1,8 @@
+# 実際の設定値（.env.example を雛形にユーザーが作成）
+.env
+
+# .env から just config で生成される設定ファイル
+src/config.js
+
+# 自前 API の依存（just api で npm install される）
+api/node_modules

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title><%= title %></title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="bg-light">
+    <div class="container py-4" style="max-width: 720px;">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="mb-0"><%= title %></h1>
+        <div>
+          <% if (typeof signedIn !== "undefined" && signedIn) { %>
+            <a href="/profile" class="btn btn-outline-primary btn-sm">プロファイル</a>
+            <a href="/profile-obo" class="btn btn-outline-success btn-sm">プロファイル (OBO)</a>
+            <a href="/auth/signout" class="btn btn-outline-danger btn-sm">サインアウト</a>
+          <% } else if (typeof authConfigured !== "undefined" && authConfigured) { %>
+            <a href="/auth/signin" class="btn btn-outline-primary btn-sm">Entra ID でサインイン</a>
+            <a href="/profile-obo" class="btn btn-outline-success btn-sm">OBO 経由でサインイン</a>
+          <% } else { %>
+            <a href="/profile" class="btn btn-outline-secondary btn-sm">プロファイル (未設定)</a>
+          <% } %>
+        </div>
+      </div>
+      <div class="card mb-3">
+        <div class="card-body">
+          <div id="chat-log" class="mb-3" style="min-height: 240px; max-height: 60vh; overflow-y: auto;"></div>
+          <form id="chat-form" class="d-flex gap-2">
+            <input
+              id="chat-input"
+              type="text"
+              name="message"
+              class="form-control"
+              placeholder="メッセージを入力..."
+              autocomplete="off"
+              required
+            />
+            <button id="send-btn" type="submit" class="btn btn-primary">送信</button>
+            <button id="clear-btn" type="button" class="btn btn-outline-secondary">クリア</button>
+          </form>
+        </div>
+      </div>
+      <p class="text-muted small">Powered by Azure OpenAI on Azure App Service</p>
+    </div>
+
+    <script>
+      (() => {
+        const form = document.getElementById("chat-form");
+        const input = document.getElementById("chat-input");
+        const log = document.getElementById("chat-log");
+        const sendBtn = document.getElementById("send-btn");
+        const clearBtn = document.getElementById("clear-btn");
+        const STORAGE_KEY = "aoai-chat-history";
+
+        let history = [];
+        try {
+          const saved = localStorage.getItem(STORAGE_KEY);
+          if (saved) history = JSON.parse(saved);
+        } catch (_) {
+          history = [];
+        }
+
+        function persist() {
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
+          } catch (_) {}
+        }
+
+        function appendBubble(role, content) {
+          const wrap = document.createElement("div");
+          wrap.className = "mb-2";
+          const label = document.createElement("span");
+          label.className = "fw-bold " + (role === "user" ? "text-primary" : "text-success");
+          label.textContent = role === "user" ? "You:" : "AI:";
+          const text = document.createElement("span");
+          text.className = "ms-2";
+          text.style.whiteSpace = "pre-wrap";
+          text.textContent = content;
+          wrap.appendChild(label);
+          wrap.appendChild(text);
+          log.appendChild(wrap);
+          log.scrollTop = log.scrollHeight;
+          return text;
+        }
+
+        history.forEach((m) => appendBubble(m.role, m.content));
+
+        form.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const msg = input.value.trim();
+          if (!msg) return;
+
+          history.push({ role: "user", content: msg });
+          appendBubble("user", msg);
+          input.value = "";
+          persist();
+
+          sendBtn.disabled = true;
+          const pending = appendBubble("assistant", "…");
+
+          try {
+            const res = await fetch("/chat", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ messages: history }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "リクエストに失敗しました");
+            pending.textContent = data.reply;
+            history.push({ role: "assistant", content: data.reply });
+            persist();
+          } catch (err) {
+            pending.textContent = "エラー: " + err.message;
+            pending.parentElement.querySelector("span").className = "fw-bold text-danger";
+            history.pop();
+            persist();
+          } finally {
+            sendBtn.disabled = false;
+            input.focus();
+          }
+        });
+
+        clearBtn.addEventListener("click", () => {
+          history = [];
+          persist();
+          log.innerHTML = "";
+          input.focus();
+        });
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,87 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+# venv の Python。venv レシピで作成される。
+py := ".venv/Scripts/python.exe"
+
+default:
+  @just --list
+
+# このプロジェクトで使うリソースグループを作成する。
+group-create resource_group="rg-aml-demo" location="japaneast":
+  @az group create --name {{resource_group}} --location {{location}}
+
+# Bicep をデプロイする (Workspace + 付随リソース Storage / Key Vault / App Insights)。
+deploy resource_group="rg-aml-demo" param_file="main.bicepparam":
+  @az deployment group create --resource-group {{resource_group}} --template-file main.bicep --parameters {{param_file}}
+
+# Bicep 出力から SDK v2 用の config.json を生成する (記事 3 章 from_config 用)。
+write-config resource_group="rg-aml-demo" deployment_name="main":
+  @$d = az deployment group show --resource-group {{resource_group}} --name {{deployment_name}} | ConvertFrom-Json; $o = $d.properties.outputs; [pscustomobject]@{ subscription_id = $o.subscriptionId.value; resource_group = $o.resourceGroupName.value; workspace_name = $o.workspaceName.value } | ConvertTo-Json | Set-Content -Encoding utf8 config.json; Write-Host 'wrote config.json'
+
+# ローカル実行用の venv を作り、SDK v2 (azure-ai-ml / azure-identity) を入れる。
+venv:
+  @python -m venv .venv; {{py}} -m pip install --upgrade pip; {{py}} -m pip install -r flow/requirements.txt
+
+# 0) ローカル CSV を Data asset として登録する (記事 6 章。train の前提)。
+register-data:
+  @{{py}} flow/00_register_data.py
+
+# 1) 学習ジョブを Serverless で投げる (Environment 作成 → Data asset 入力で command job → 完了待ち)。
+train:
+  @{{py}} flow/01_train_job.py
+
+# 2) 学習ジョブの出力をモデルとして登録する。
+register:
+  @{{py}} flow/02_register_model.py
+
+# 3) モデルを Managed Online Endpoint にデプロイする (★常時課金が始まる)。
+deploy-endpoint:
+  @{{py}} flow/03_deploy_endpoint.py
+
+# 4) エンドポイントに推論リクエストを投げて動作確認する。
+invoke:
+  @{{py}} flow/04_invoke.py
+
+# 5) エンドポイントを削除して常時課金を止める。
+cleanup:
+  @{{py}} flow/05_cleanup.py
+
+# データ登録 → 学習 → 登録 → デプロイ → 推論 を一気に実行する。
+all:
+  @just register-data; just train; just register; just deploy-endpoint; just invoke
+
+# --- 発展レシピ A: Blue/Green デプロイ (記事 9 章の応用。03/04 のあと、cleanup の前に) ---
+
+# green を追加し blue:90 / green:10 のカナリアにする。
+canary:
+  @{{py}} flow/bluegreen.py deploy-green
+
+# トラフィックを green に 100% 寄せる。
+promote:
+  @{{py}} flow/bluegreen.py promote
+
+# blue:100 に戻し green を削除する (ロールバック)。
+rollback-blue:
+  @{{py}} flow/bluegreen.py rollback
+
+# --- 発展レシピ B: MLflow ノーコードデプロイ (記事 8〜9 章の対比。score.py を書かない流儀) ---
+
+# 学習 + ジョブ内で MLFLOW モデル登録 (01+02 相当を 1 本で)。
+train-mlflow:
+  @{{py}} flow/mlflow_train.py
+
+# MLFLOW モデルを environment も score.py も無しでデプロイ (★常時課金が始まる)。
+deploy-mlflow:
+  @{{py}} flow/mlflow_deploy.py
+
+# MLflow ノーコードエンドポイントに推論リクエストを投げる。
+invoke-mlflow:
+  @{{py}} flow/mlflow_invoke.py
+
+# データ登録 → MLflow 学習+登録 → ノーコードデプロイ → 推論 を一気に実行する。
+all-mlflow:
+  @just register-data; just train-mlflow; just deploy-mlflow; just invoke-mlflow
+
+# リソースグループごと削除する (Workspace・付随リソース・エンドポイント VM もまとめて消える)。
+destroy resource_group="rg-aml-demo":
+  @az group delete --name {{resource_group}} --yes --no-wait

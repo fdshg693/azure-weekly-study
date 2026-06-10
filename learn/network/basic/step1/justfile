@@ -1,0 +1,36 @@
+set shell := ["powershell.exe", "-c"]
+
+# Variables
+RESOURCE_GROUP := "rg-network-learn-minimal"
+LOCATION := "japaneast"
+
+# List available commands
+default:
+    @just --list
+
+# Create resource group and deploy resources
+deploy:
+    az group create --name {{RESOURCE_GROUP}} --location {{LOCATION}}
+    az deployment group create --resource-group {{RESOURCE_GROUP}} --template-file main.bicep
+
+# Test ping to the VM's public IP
+test-ping:
+    $IP = az deployment group show --resource-group {{RESOURCE_GROUP}} --name main --query properties.outputs.publicIpAddress.value -o tsv
+    Write-Host "Pinging $IP ..."
+    ping $IP
+
+# Deny ICMP in NSG to test block
+deny-ping:
+    Write-Host "Updating NSG to deny ICMP..."
+    az network nsg rule update --resource-group {{RESOURCE_GROUP}} --nsg-name nsg-minimal --name Allow-ICMP-Inbound --access Deny
+    Write-Host "NSG updated. Try running 'just test-ping' again to see it fail!"
+
+# Allow ICMP in NSG to restore access
+allow-ping:
+    Write-Host "Updating NSG to allow ICMP..."
+    az network nsg rule update --resource-group {{RESOURCE_GROUP}} --nsg-name nsg-minimal --name Allow-ICMP-Inbound --access Allow
+    Write-Host "NSG updated. Try running 'just test-ping' again to see it succeed!"
+
+# Delete resource group and all resources
+destroy:
+    az group delete --name {{RESOURCE_GROUP}} --yes --no-wait

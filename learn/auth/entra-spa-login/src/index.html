@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Entra ID ログイン（SPA 最小サンプル）</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; }
+    h1 { font-size: 1.4rem; }
+    #status { font-weight: bold; padding: .4rem .8rem; background: #f0f0f0; border-radius: 6px; display: inline-block; }
+    .buttons { margin: 1rem 0; display: flex; gap: .5rem; flex-wrap: wrap; }
+    button { padding: .5rem 1rem; font-size: 1rem; cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .5; }
+    pre { background: #1e1e1e; color: #d4d4d4; padding: 1rem; border-radius: 6px; overflow-x: auto; font-size: .85rem; }
+  </style>
+</head>
+<body>
+  <h1>Entra ID ログイン（SPA 最小サンプル）</h1>
+  <p>ブラウザだけで動く SPA から Entra ID にログインし、ID トークンの中身を表示します。</p>
+
+  <p id="status">読み込み中...</p>
+
+  <div class="buttons">
+    <button id="login" disabled>ログイン</button>
+    <button id="token" disabled>アクセストークン取得 (Graph)</button>
+    <button id="logout" disabled>ログアウト</button>
+  </div>
+
+  <h2>出力</h2>
+  <pre id="output"></pre>
+
+  <!--
+    読み込みの考え方：
+      - MSAL（CDN・UMD）は classic script で先に読み、window.msal を生やす。
+      - アプリ側は ES モジュール。auth.js が authConfig.js を、authConfig.js が
+        config.js（.env から `just config` で生成）を import する依存グラフになっており、
+        どの値がどこから来るかは import/export で明示される（暗黙のグローバルは使わない）。
+    classic script は module（defer 相当）より先に実行されるので、auth.js 実行時に window.msal は用意済み。
+  -->
+  <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.7.1/lib/msal-browser.min.js"></script>
+  <script type="module" src="./auth.js"></script>
+</body>
+</html>

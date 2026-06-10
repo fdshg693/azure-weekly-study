@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AKS demo front</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 3rem auto; padding: 0 1rem; }
+      pre { background: #f4f4f4; padding: 1rem; border-radius: 8px; overflow-x: auto; }
+      button { padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer; }
+    </style>
+  </head>
+  <body>
+    <h1>🚢 AKS demo — front</h1>
+    <p>このページは front Deployment (nginx) が配信しています。</p>
+    <p>下のボタンで Ingress 経由 <code>/api</code> を叩き、API Pod → PostgreSQL の疎通を確認します。</p>
+    <button onclick="callApi()">GET /api</button>
+    <pre id="out">(まだ呼んでいません)</pre>
+    <script>
+      async function callApi() {
+        const out = document.getElementById("out");
+        out.textContent = "loading...";
+        try {
+          const res = await fetch("/api");
+          out.textContent = JSON.stringify(await res.json(), null, 2);
+        } catch (e) {
+          out.textContent = "error: " + e;
+        }
+      }
+    </script>
+  </body>
+</html>

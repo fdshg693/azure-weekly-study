@@ -1,0 +1,54 @@
+# Azure における認証・認可の学習
+
+OAuth 2.0 / OpenID Connect を土台に、Entra ID を使った認証・認可を、プロジェクトごとにサブフォルダで分割して学ぶ。
+各プロジェクトは「**まず一般概念（ベンダー非依存）→ Entra での実装**」「**設定を出し入れして因果を確かめる**」という、このリポジトリ共通の方針に従う。
+構築・実行はユーザー自身が行い、AI が Azure 上で実行することはない。
+
+- `./PLAN.md`：この先のプロジェクト候補・学ぶ概念・依存関係・進め方のグループ分け
+
+## 使用技術
+
+- 基本は Bicep, just, Azure CLI
+    - just でコマンドを簡略化・集約
+    - 環境構築は可能な限り Bicep、Bicep がカバーできない／すべきでない箇所は Azure CLI（例：アプリ登録）
+- ただし**クライアント側の認証**を扱うプロジェクトでは、必要に応じてフロントエンドのコードも書く
+    - 例：SPA ログインは MSAL.js を使うため、ビルド不要の**バニラ JS + MSAL.js（CDN）**で最小構成にする
+
+## 各プロジェクト共通ファイル構成
+
+細かく分ければよいわけではなく、可読性・理解しやすさを最優先に分割する。
+
+- `justfile`：アプリ登録・設定生成・ローカル実行などのコマンドをまとめる
+    - プロジェクトが複雑になる場合は、justfileではなくTaskfile(Taskfile.yml等)を利用すること
+- `README.md`：このプロジェクトで行う内容・手順・学習の流れ
+- `KNOWLEDGE.md`：このプロジェクトで新たに出た用語・概念（前のプロジェクトでカバー済みの語は含めない）
+- `PLAN.md`（任意）：そのプロジェクト固有の設計方針（大きめのプロジェクトのみ）
+- `MERMAID.md`（任意）：認証フロー／構成を mermaid で表現
+- `*.bicep` ／ フロントエンドのソース：内容に応じて
+
+## プロジェクト一覧
+
+### entra-spa-login
+
+`./entra-spa-login`
+
+`auth` の最初のプロジェクト。**バニラ JS + MSAL.js** だけで動く SPA から Entra ID にサインインし、ログイン状態とユーザー情報（ID トークンのクレーム）を画面に出す「**認証の最小ループ**」を学ぶ。
+OAuth 2.0 / OpenID Connect の登場人物（リソースオーナー・クライアント・IdP）、**ID トークン**（身分証）と**アクセストークン**（API への通行証）が別物であること、SPA がパブリッククライアントゆえ **Authorization Code Flow + PKCE** を使う理由、**リダイレクト URI の完全一致**を、設定を出し入れして（リダイレクト URI をわざと壊す／スコープを足し引きして 2 種のトークンを見比べる）確かめる。アプリ登録は az CLI で行い、自前 API は持たず Microsoft Graph（`User.Read`）を **dynamic consent** で消費するだけ、という「**クライアント側・認証のみ**」の最小スコープに絞る（保護対象の自前 API や認可は後続プロジェクトへ）。
+
+### api-protect
+
+`./api-protect`
+
+`auth` の 2 つ目のプロジェクト（[PLAN.md](./PLAN.md) の案1）。`entra-spa-login` の「クライアント側・認証のみ」の続きとして、初めて**リソースサーバー側**（自前 API）を作る。SPA から「**自前 API 宛**」のアクセストークン（委任スコープ `access_as_user`）を取得し、**Node 組み込み HTTP + `jose`** の最小 API がそのトークンの**署名（JWKS）・`aud`・`scp`** を検証する。アプリ登録は**クライアント(SPA)とリソースサーバー(API)で 2 つに分け**（API 側は `Expose an API`、SPA 側は `requiredResourceAccess`）、`just register` が一括作成・配線する。前プロジェクトの Graph 宛トークンとの `aud`/`scp` の違い、**401（認証）と 403（認可）の違い**を、`AUDIENCE`/`REQUIRED_SCOPE` を出し入れして確かめる。SPA は前プロジェクトをそのまま「自前 API 宛」に作り替えたもの。
+
+### app-roles-rbac
+
+`./app-roles-rbac`
+
+`auth` の 3 つ目のプロジェクト（[PLAN.md](./PLAN.md) の案2）。`api-protect` の「保護された自前 API」を土台に、**認証（誰か）から認可（何をしてよいか）へ**進む。自前 API のアプリ登録に **App ロール**（`Tasks.Read` / `Tasks.Write`）を定義し、ユーザーに割り当てる。発行アクセストークンの **`roles` クレーム**を `api/server.js` が読み、エンドポイントごとに**クレームベースで認可**を出し分ける（`/api/me` はロール不要、`GET /api/tasks` は `Tasks.Read`、`POST /api/tasks` は `Tasks.Write`）。核心は **`scp`（アプリがユーザーの代理で要求した操作範囲）と `roles`（主体に割り当てられた役割）の違い**を 1 つのトークンの中で見比べること。本プロジェクトは複雑化したため **just ではなく Taskfile + `scripts/*.ps1`** を採用（PowerShell の実体を .ps1 に切り出し、Taskfile からは呼ぶだけ）。`task assign -- <role>`/`task unassign -- <role>`/`task roles` でロールを**出し入れ**し、SPA は `forceRefresh` で毎回トークンを取り直すので、**同じユーザー・同じログインのまま 200 ↔ 403 が変わる**ことを体感する。次は案3（confidential-web）／案4（client-credentials-daemon）で「誰が・どこで認証するか」のバリエーションへ。
+
+### confidential-web
+
+`./confidential-web`
+
+`auth` の 4 つ目のプロジェクト（[PLAN.md](./PLAN.md) の案3）。これまで 3 つすべて **SPA ＝ パブリッククライアント**（秘密なし・PKCE・トークンはブラウザ）だったのに対し、初めて **サーバーサイド Web アプリ ＝ コンフィデンシャルクライアント**を作る。**クライアントシークレット**を持ち、認可コードフローの **code→token 交換をサーバーが `client_secret` 付きで完結**（**Node 組み込み HTTP + `crypto` + `jose`**、SDK 不使用で交換の一行を露わにする）。発行トークン（ID/アクセス/リフレッシュ）は**サーバーのメモリに保持**し、ブラウザには **`sid`（httpOnly クッキー）だけ**渡す＝**BFF**。`/api/graph` はサーバーが保持アクセストークンで Graph `/me` を代理呼び出しする。アプリ登録は `task register` が **Web プラットフォーム**（`--web-redirect-uris`）に作り、**クライアントシークレットを発行**（SPA プラットフォームとの違いが肝）。`config.js` 生成も SPA 配信も無い（ブラウザに ID/スコープ/秘密を渡さないのが主題）。`entra-spa-login` の「PKCE で秘密なし」と正面から対比し、`CLIENT_SECRET` を出し入れすると **`invalid_client`** で交換が失敗する／devtools でブラウザに `sid` クッキーしか無いことを確かめる。Taskfile + `scripts/*.ps1`。次は案4（client-credentials-daemon）で、このシークレットを**ユーザー不在**でアプリ自身が使う（委任 vs アプリケーション許可）。

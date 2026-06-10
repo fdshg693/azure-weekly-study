@@ -1,0 +1,5 @@
+# 実際の設定値（.env.example を雛形にユーザーが作成）
+.env
+
+# .env から just config で生成される設定ファイル
+src/config.js
