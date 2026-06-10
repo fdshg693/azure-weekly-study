@@ -1,0 +1,66 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+# ディレクトリ
+func_dir := "python"
+
+default:
+  @just --list
+
+# ----------------------------------------------------------------------------
+# Terraform
+# ----------------------------------------------------------------------------
+
+# Terraform プロバイダーを初期化
+init:
+  @terraform init
+
+# 変更内容のプレビュー
+plan:
+  @terraform plan
+
+# インフラを作成・更新（確認なし）
+apply:
+  @terraform apply -auto-approve
+
+# インフラを削除（確認なし）
+destroy:
+  @terraform destroy -auto-approve
+
+# 出力値を表示
+output:
+  @terraform output
+
+# ----------------------------------------------------------------------------
+# Function App デプロイ
+# ----------------------------------------------------------------------------
+
+# Function App に関数コードを発行（Azure Functions Core Tools が必要）
+deploy:
+  @$name = terraform output -raw function_app_name; Push-Location {{func_dir}}; func azure functionapp publish $name --python; Pop-Location
+
+# インフラ作成 → 関数コードデプロイ
+up: apply deploy
+
+# ----------------------------------------------------------------------------
+# 動作確認
+# ----------------------------------------------------------------------------
+
+# uploads コンテナにテストファイルをアップロード（例: just upload file="memo.txt"）
+upload file="sample.txt":
+  @$rg = terraform output -raw resource_group_name; $acct = terraform output -raw storage_account_name; $c = terraform output -raw uploads_container; $key = az storage account keys list -g $rg -n $acct --query "[0].value" -o tsv; ("hello blob trigger @ " + (Get-Date -Format o)) | Out-File -Encoding utf8 {{file}}; az storage blob upload --account-name $acct --account-key $key -c $c -n {{file}} -f {{file}} --overwrite; Write-Host ("uploaded {{file}} to '" + $c + "' container")
+
+# logs コンテナの一覧を表示（アップロードのたびに <name>.log が増える）
+logs:
+  @$rg = terraform output -raw resource_group_name; $acct = terraform output -raw storage_account_name; $c = terraform output -raw logs_container; $key = az storage account keys list -g $rg -n $acct --query "[0].value" -o tsv; az storage blob list --account-name $acct --account-key $key -c $c -o table
+
+# 特定のログファイルの中身を表示（例: just show-log name="sample.txt.log"）
+show-log name="sample.txt.log":
+  @$rg = terraform output -raw resource_group_name; $acct = terraform output -raw storage_account_name; $c = terraform output -raw logs_container; $key = az storage account keys list -g $rg -n $acct --query "[0].value" -o tsv; az storage blob download --account-name $acct --account-key $key -c $c -n {{name}} -f - --no-progress
+
+# 関数の実行ログ（ストリーミング）を表示
+tail:
+  @$name = terraform output -raw function_app_name; func azure functionapp logstream $name
+
+# アップロード → 待機 → ログ確認を一気に通すデモ
+demo file="demo.txt":
+  @Write-Host "--- 1. upload '{{file}}' to uploads container ---"; just upload file="{{file}}"; Write-Host "--- 2. wait 30s for the blob trigger (Consumption Plan polling) ---"; Start-Sleep -Seconds 30; Write-Host "--- 3. list logs container ---"; just logs; Write-Host "--- 4. show the generated log ---"; just show-log name="{{file}}.log"
