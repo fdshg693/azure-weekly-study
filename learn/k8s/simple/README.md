@@ -1,9 +1,5 @@
 # k8s — AKS が主役の最小構成アプリ (Bicep + Justfile 実装)
 
-記事 [`aks_app_build.md`](aks_app_build.md) を、Bicep（Azure インフラ）と Justfile（オーケストレーション）で
-動く形に落としたプロジェクト。記事が `az` コマンド列で組んでいたインフラを宣言的な Bicep に置き換え、
-K8s マニフェスト本体は `manifests/` に分離して `kubectl` で適用する。
-
 ## 構成
 
 ```
