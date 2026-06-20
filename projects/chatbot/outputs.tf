@@ -66,12 +66,12 @@ output "openai_account_name" {
 }
 
 output "openai_deployment_name" {
-  description = "デプロイ済みモデル名（アプリの AZURE_OPENAI_DEPLOYMENT）"
+  description = "デプロイ済みモデル名（規約A: app/config/models.js の chat.deployment と一致）"
   value       = azurerm_cognitive_deployment.chat.name
 }
 
 output "openai_gpt5_deployment_name" {
-  description = "gpt-5 デプロイ名（アプリの AZURE_OPENAI_RESPONSES_DEPLOYMENT / Responses API 用）"
+  description = "gpt-5 デプロイ名（規約A: app/config/models.js の reasoning.deployment と一致 / Responses API 用）"
   value       = azurerm_cognitive_deployment.gpt5.name
 }
 

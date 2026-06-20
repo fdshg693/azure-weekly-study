@@ -43,7 +43,7 @@ Azure App Service（Linux / Node.js 20 LTS）上で動く Azure OpenAI チャッ
 | `app_service_plan_sku` | `B1` | `F1` / `B1` / `S1` / `P1v2` / `P1v3` |
 | `web_app_name` | `webapp-chatbot-dev-seiwan` | URL 　`https://<name>.azurewebsites.net` の一部、グローバル一意 |
 | `openai_account_name` | `aoai-chatbot-dev-seiwan` | `custom_subdomain_name` にもなる、グローバル一意 |
-| `openai_deployment_name` | `gpt-4o-mini` | アプリが `AZURE_OPENAI_DEPLOYMENT` で参照する名前 |
+| `openai_deployment_name` | `gpt-4o-mini` | デプロイ名（規約A: モデル名と一致。アプリは `app/config/models.js` で参照） |
 
 ## アプリ側の説明
 

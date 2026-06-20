@@ -20,10 +20,11 @@ require("dotenv").config({ path: require("path").join(__dirname, "..", ".env") }
 
 const { AzureOpenAI } = require("openai");
 const { getBearerTokenProvider, DefaultAzureCredential } = require("@azure/identity");
+const { MODELS } = require("../config/models");
 
+// エンドポイントだけ env（環境固有）。モデル名・api-version は config/models.js から。
 const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-const deployment = process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-4o-mini";
-const apiVersion = process.env.AZURE_OPENAI_API_VERSION || "2024-10-21";
+const { deployment, apiVersion } = MODELS.chat;
 
 // DefaultAzureCredential はローカルでは `az login`、App Service 上では
 // マネージド ID を自動利用する（server.js と同じ認証パターン）。

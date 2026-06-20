@@ -12,23 +12,15 @@ const { getBearerTokenProvider, DefaultAzureCredential } = require("@azure/ident
 const auth = require("./auth");
 const authObo = require("./auth_obo");
 const tools = require("./tools");
+const { MODELS } = require("./config/models");
 
 const port = process.env.PORT || 3000;
+// エンドポイントだけが環境固有値なので env から取得する。
 const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-// /chat は Responses API を使う。Responses 対応の推論モデル（gpt-5）のデプロイ名を使う。
-// gpt-4o-mini は非推論モデルで reasoning.effort を受け付けないため、ここでは使わない。
-// 解決順: 専用 env（gpt-5 デプロイ） → 旧 env（後方互換） → 既定 "gpt-5"。
-const deployment =
-  process.env.AZURE_OPENAI_RESPONSES_DEPLOYMENT ||
-  process.env.AZURE_OPENAI_DEPLOYMENT ||
-  "gpt-5";
-// Responses API は新しめの api-version でのみ提供される（旧 2024-10-21 では 404 になる）。
-// Chat Completions 用の AZURE_OPENAI_API_VERSION とはキーを分け、モデル併用時に
-// それぞれ別の api-version を指定できるようにする（共有すると両立できないため）。
-const apiVersion = process.env.AZURE_OPENAI_RESPONSES_API_VERSION || "2025-04-01-preview";
-// gpt-5 は推論モデル。チャット用途では推論を軽くしてレイテンシ・コストを抑える。
-// minimal / low / medium / high から選べる（env で上書き可）。
-const reasoningEffort = process.env.AZURE_OPENAI_REASONING_EFFORT || "low";
+// /chat は Responses API を使う。モデル名・api-version・推論強度は config/models.js に集約。
+// gpt-4o-mini は非推論モデルで reasoning.effort を受け付けないため、推論モデル設定を使う。
+// 命名規約（規約A）により deployment 名 = モデル名なので、env からは受け取らない。
+const { deployment, apiVersion, reasoningEffort } = MODELS.reasoning;
 
 // DefaultAzureCredential はローカル開発時は `az login` の資格情報、
 // App Service 上ではシステム割り当てマネージド ID を自動で使用する

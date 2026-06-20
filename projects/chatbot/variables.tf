@@ -113,7 +113,9 @@ variable "openai_sku_name" {
 }
 
 variable "openai_deployment_name" {
-  description = "Azure OpenAI 上のモデルデプロイ名（アプリが指定する deployment 名）"
+  # 命名規約（規約A）: デプロイ名はモデル名と一致させる。アプリ（app/config/models.js）は
+  # この名前を直接参照するため、変更する場合は config/models.js の chat.deployment も揃えること。
+  description = "Azure OpenAI 上のモデルデプロイ名（= モデル名。app/config/models.js と一致させる）"
   type        = string
   default     = "gpt-4o-mini"
 }
@@ -150,33 +152,18 @@ variable "openai_deployment_capacity" {
   default     = 1
 }
 
-variable "openai_api_version" {
-  description = <<-EOT
-    Chat Completions（gpt-4o-mini）用の API バージョン。
-    Chat Completions は旧 api-version でも動く。Responses 用とはキーを分けることで、
-    gpt-4o-mini と gpt-5 を別々の api-version で併用できるようにしている。
-  EOT
-  type        = string
-  default     = "2024-10-21"
-}
-
-variable "openai_responses_api_version" {
-  description = <<-EOT
-    Responses API（gpt-5）用の API バージョン。
-    /chat は Responses API を使うため、Responses 対応のプレビュー版が必須。
-    旧 2024-10-21 では Responses パスが存在せず 404 になる（要 2025-03-01-preview 以降）。
-  EOT
-  type        = string
-  default     = "2025-04-01-preview"
-}
+# 注: api-version は「秘密でないアプリ設定」なので Terraform では管理しない。
+# モデルごとの api-version は app/config/models.js に集約している（コミット対象）。
 
 # ----------------------------------------------------------------------------
 # gpt-5 デプロイ（Responses API 用）
 # ----------------------------------------------------------------------------
 # gpt-5 は推論モデルで Responses API（reasoning.effort 等）に対応する。
-# gpt-4o-mini デプロイとは別に共存させ、アプリは AZURE_OPENAI_RESPONSES_DEPLOYMENT で参照する。
+# gpt-4o-mini デプロイとは別に共存させ、アプリは app/config/models.js の reasoning から参照する。
 variable "openai_gpt5_deployment_name" {
-  description = "gpt-5 のデプロイ名（アプリの AZURE_OPENAI_RESPONSES_DEPLOYMENT）"
+  # 命名規約（規約A）: デプロイ名 = モデル名。アプリは app/config/models.js の
+  # reasoning.deployment でこの名前を直接参照するため、変更時は両方を揃えること。
+  description = "gpt-5 のデプロイ名（= モデル名。app/config/models.js と一致させる）"
   type        = string
   default     = "gpt-5"
 }

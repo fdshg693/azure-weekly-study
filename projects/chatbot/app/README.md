@@ -32,9 +32,13 @@ const openai = new AzureOpenAI({ endpoint, azureADTokenProvider, deployment, api
 - **App Service 上**: 自動でシステム割り当てマネージド ID のトークンが使われる
 - **ローカル開発**: `az login` 済みの CLI 資格情報が使われる（`just grant-self` で自分の Entra アカウントに `Cognitive Services OpenAI User` ロールを付与しておく）
 
-エンドポイント・デプロイ名・API バージョンは App Settings 経由で注入され、コードからキー類は一切参照しない。
+設定は性質で置き場所を分けている。コードからキー類は一切参照しない。
 
-> **API バージョン注意**: `/chat` は **Responses API**（`openai.responses.create`）を使うため、`AZURE_OPENAI_API_VERSION` は Responses 対応の新しめのプレビュー版（例: `2025-04-01-preview`）が必要。旧 `2024-10-21` では Responses エンドポイントが無く 404 になる。
+- **エンドポイント**（環境固有値）: env / App Settings（`AZURE_OPENAI_ENDPOINT`）から注入
+- **モデル名・API バージョン・推論強度**（秘密でないアプリ設定）: [`config/models.js`](config/models.js) に集約（コミット対象）
+- **命名規約（規約A）**: Azure OpenAI のデプロイ名 = モデル名（`gpt-4o-mini` / `gpt-5`）。Terraform もこの規約でデプロイするため、アプリはデプロイ名を env から受け取らず config の値をそのまま使える。モデルを増やすときは `config/models.js` に 1 エントリ追加するだけ。
+
+> **API バージョン注意**: `/chat` は **Responses API**（`openai.responses.create`）を使うため、`config/models.js` の `reasoning.apiVersion` は Responses 対応の新しめのプレビュー版（例: `2025-04-01-preview`）が必要。旧 `2024-10-21` では Responses エンドポイントが無く 404 になる。
 
 ### `/chat` のツール実行ループ（function calling）
 

@@ -24,8 +24,8 @@ npm install で 1GB のメモリ上限を踏むことがあるため、本プロ
 
 ### API バージョン（Responses API）
 
-`/chat` は **Responses API**（`openai.responses.create`）を使うため、`AZURE_OPENAI_API_VERSION` は
-Responses 対応の新しめのプレビュー版（例: `2025-04-01-preview`）が必要。
+`/chat` は **Responses API**（`openai.responses.create`）を使うため、`app/config/models.js` の
+`reasoning.apiVersion` は Responses 対応の新しめのプレビュー版（例: `2025-04-01-preview`）が必要。
 旧 `2024-10-21` では Responses エンドポイントが無く 404 になる。
 
 ---
@@ -34,7 +34,7 @@ Responses 対応の新しめのプレビュー版（例: `2025-04-01-preview`）
 
 - **チャット送信時に「Azure OpenAI からの応答取得に失敗しました」**
   - `just logs` でスタックトレースを確認。`401` 系ならロール割り当ての反映待ち（数分かかる場合あり）
-  - `404` 系なら `AZURE_OPENAI_API_VERSION` が Responses 非対応の古い版になっていないか確認（上記）
+  - `404` 系なら `app/config/models.js` の `reasoning.apiVersion` が Responses 非対応の古い版になっていないか確認（上記）
   - `custom_subdomain_name` が無い OpenAI アカウントだと Entra 認証は失敗するので、`main.tf` の該当行が消されていないか確認
 - **モデルデプロイで `RegionNotSupported`**
   - `openai_location` を `eastus` / `swedencentral` 等、対象モデルが提供されているリージョンに変更

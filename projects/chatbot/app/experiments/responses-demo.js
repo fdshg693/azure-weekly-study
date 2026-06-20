@@ -14,10 +14,10 @@
 // 実行: node responses-demo.js "あなたの聞きたいこと"
 //   例) node responses-demo.js "私の名前と契約プラン、今月の請求額を教えて。"
 //
-// 必要な環境変数（app/.env から読み込む。server.js と同じ）:
-//   AZURE_OPENAI_ENDPOINT              例: https://aoai-chatbot-dev-xxx.openai.azure.com/
-//   AZURE_OPENAI_RESPONSES_API_VERSION Responses 対応版（例: 2025-04-01-preview）
-//   AZURE_OPENAI_RESPONSES_DEPLOYMENT  gpt-5 デプロイ名（未設定なら下記の順で解決）
+// 設定の出どころ:
+//   AZURE_OPENAI_ENDPOINT … app/.env（環境固有値）。例: https://aoai-chatbot-dev-xxx.openai.azure.com/
+//   モデル名 / api-version / 推論強度 … config/models.js（コミット対象のアプリ設定）
+//   --deployment <名前> … 別デプロイで試したいときの一時上書き（実験用 CLI フラグ）
 // ============================================================================
 
 // tools-demo.js と同様、ローカル開発では app/.env から環境変数を読み込む。
@@ -25,18 +25,15 @@ require("dotenv").config({ path: require("path").join(__dirname, "..", ".env") }
 
 const { AzureOpenAI } = require("openai");
 const { getBearerTokenProvider, DefaultAzureCredential } = require("@azure/identity");
+const { MODELS } = require("../config/models");
 
 const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-// gpt-4o-mini の既存デプロイ（AZURE_OPENAI_DEPLOYMENT）と衝突させないため、
-// Responses 用のデプロイ名は専用の env で上書きできるようにする。
-// 解決順: 専用 env → CLI の --deployment → 既定 "gpt-5"。
-const deployment =
-  process.env.AZURE_OPENAI_RESPONSES_DEPLOYMENT ||
-  getFlag("--deployment") ||
-  "gpt-5";
-// Responses API は新しめの api-version でのみ提供される（旧 2024-10-21 は不可）。
-// Chat Completions 用の AZURE_OPENAI_API_VERSION とはキーを分ける（モデル併用のため）。
-const apiVersion = process.env.AZURE_OPENAI_RESPONSES_API_VERSION || "2025-04-01-preview";
+// モデル設定は config/models.js（推論モデル）から取得する。
+// ただし本スクリプトは「別デプロイで Responses API が通るか」を試す実験用なので、
+// その場限りの上書きとして CLI の --deployment だけ残す（既定は config の値）。
+const deployment = getFlag("--deployment") || MODELS.reasoning.deployment;
+const apiVersion = MODELS.reasoning.apiVersion;
+const reasoningEffort = MODELS.reasoning.reasoningEffort;
 
 // DefaultAzureCredential はローカルでは `az login`、App Service 上では
 // マネージド ID を自動利用する（server.js と同じ認証パターン）。
@@ -143,8 +140,8 @@ async function main() {
     model: deployment,
     input,
     tools,
-    // gpt-5 は推論モデル。チャット用途では推論を軽くしてレイテンシ・コストを抑える。
-    reasoning: { effort: "low" },
+    // gpt-5 は推論モデル。推論の強さは config/models.js で管理（チャット用途は軽め）。
+    reasoning: { effort: reasoningEffort },
   });
 
   // モデルがツールを呼んだら実行し、結果を返して再度生成させるループ。
@@ -176,7 +173,7 @@ async function main() {
       model: deployment,
       input,
       tools,
-      reasoning: { effort: "low" },
+      reasoning: { effort: reasoningEffort },
     });
   }
 
@@ -196,7 +193,7 @@ main().catch((err) => {
   if (err.status === 404) {
     console.error(
       "\nヒント: 404 は『その deployment に Responses API のパスが無い』状態です。" +
-        "\n  - AZURE_OPENAI_RESPONSES_DEPLOYMENT が gpt-5 のデプロイ名になっているか" +
+        "\n  - config/models.js の reasoning.deployment（または --deployment）が gpt-5 のデプロイ名になっているか" +
         "\n  - そのモデル/リージョンが Responses API に対応しているか を確認してください。"
     );
   }

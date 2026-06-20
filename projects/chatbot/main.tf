@@ -132,14 +132,12 @@ resource "azurerm_linux_web_app" "main" {
     # zip デプロイ後に Oryx で `npm install` を走らせる
     "SCM_DO_BUILD_DURING_DEPLOYMENT" = "true"
 
-    # アプリが参照する Azure OpenAI 接続情報（キーは持たない）
-    "AZURE_OPENAI_ENDPOINT"    = azurerm_cognitive_account.openai.endpoint
-    "AZURE_OPENAI_DEPLOYMENT"  = azurerm_cognitive_deployment.chat.name
-    "AZURE_OPENAI_API_VERSION" = var.openai_api_version
-    # Responses API 用の gpt-5 デプロイ名と api-version（/chat はこちらを使う）。
-    # Chat Completions 用 (AZURE_OPENAI_*) とはキーを分け、両モデルを併用可能にする。
-    "AZURE_OPENAI_RESPONSES_DEPLOYMENT"  = azurerm_cognitive_deployment.gpt5.name
-    "AZURE_OPENAI_RESPONSES_API_VERSION" = var.openai_responses_api_version
+    # アプリが参照する Azure OpenAI 接続情報（キーは持たない）。
+    # エンドポイントだけが環境固有値なので App Setting で渡す。
+    # モデル名 / api-version / 推論強度はアプリの app/config/models.js に集約しており、
+    # env からは渡さない。命名規約（規約A）でデプロイ名 = モデル名にしているため、
+    # アプリ側 config の値とこの Terraform が作るデプロイ名は一致する。
+    "AZURE_OPENAI_ENDPOINT" = azurerm_cognitive_account.openai.endpoint
 
     # express-session を本番モード (secure cookie) で動かす
     "NODE_ENV"               = "production"
