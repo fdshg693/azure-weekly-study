@@ -151,9 +151,52 @@ variable "openai_deployment_capacity" {
 }
 
 variable "openai_api_version" {
-  description = "アプリが呼び出す Azure OpenAI の API バージョン"
+  description = <<-EOT
+    Chat Completions（gpt-4o-mini）用の API バージョン。
+    Chat Completions は旧 api-version でも動く。Responses 用とはキーを分けることで、
+    gpt-4o-mini と gpt-5 を別々の api-version で併用できるようにしている。
+  EOT
   type        = string
   default     = "2024-10-21"
+}
+
+variable "openai_responses_api_version" {
+  description = <<-EOT
+    Responses API（gpt-5）用の API バージョン。
+    /chat は Responses API を使うため、Responses 対応のプレビュー版が必須。
+    旧 2024-10-21 では Responses パスが存在せず 404 になる（要 2025-03-01-preview 以降）。
+  EOT
+  type        = string
+  default     = "2025-04-01-preview"
+}
+
+# ----------------------------------------------------------------------------
+# gpt-5 デプロイ（Responses API 用）
+# ----------------------------------------------------------------------------
+# gpt-5 は推論モデルで Responses API（reasoning.effort 等）に対応する。
+# gpt-4o-mini デプロイとは別に共存させ、アプリは AZURE_OPENAI_RESPONSES_DEPLOYMENT で参照する。
+variable "openai_gpt5_deployment_name" {
+  description = "gpt-5 のデプロイ名（アプリの AZURE_OPENAI_RESPONSES_DEPLOYMENT）"
+  type        = string
+  default     = "gpt-5"
+}
+
+variable "openai_gpt5_model_name" {
+  description = "デプロイする gpt-5 系モデル名"
+  type        = string
+  default     = "gpt-5"
+}
+
+variable "openai_gpt5_model_version" {
+  description = "gpt-5 モデルのバージョン（Japan East で利用可能なもの）"
+  type        = string
+  default     = "2025-08-07"
+}
+
+variable "openai_gpt5_deployment_capacity" {
+  description = "gpt-5 デプロイの TPM 容量（1 = 1000 TPM 単位）。サブスクリプションのクォータ範囲で設定する。"
+  type        = number
+  default     = 1
 }
 
 # ----------------------------------------------------------------------------
@@ -186,6 +229,34 @@ variable "express_session_secret" {
   type        = string
   default     = ""
   sensitive   = true
+}
+
+# ----------------------------------------------------------------------------
+# Key Vault（Tavily API キーなど外部秘密値の保管）関連の変数
+# ----------------------------------------------------------------------------
+variable "key_vault_name" {
+  description = <<-EOT
+    Key Vault 名。グローバルで一意である必要がある。
+    Tavily の API キーなど、Azure と独立した外部サービスの秘密値を保管する。
+    命名規則: 英数字とハイフン、3-24文字、先頭は英字。
+  EOT
+  type        = string
+  default     = "kv-chatbot-dev-seiwan"
+
+  validation {
+    condition     = can(regex("^[a-zA-Z][a-zA-Z0-9-]{1,22}[a-zA-Z0-9]$", var.key_vault_name))
+    error_message = "key_vault_name は英字始まり・英数字とハイフン・3-24文字である必要があります。"
+  }
+}
+
+variable "tavily_secret_name" {
+  description = <<-EOT
+    Tavily API キーを格納する Key Vault シークレットの名前。
+    アプリ（tools.js）の TAVILY_SECRET_NAME と一致させること。
+    値そのものは Terraform では管理せず `az keyvault secret set` で投入する。
+  EOT
+  type        = string
+  default     = "tavily-api-key"
 }
 
 # ----------------------------------------------------------------------------

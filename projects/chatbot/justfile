@@ -6,6 +6,8 @@ web_app_name   := "webapp-chatbot-dev-seiwan"
 app_dir        := "app"
 zip_path       := "app.zip"
 entra_app_name := "chatbot-graph-demo"
+# Key Vault 上の Tavily シークレット名（variables.tf の tavily_secret_name と合わせる）
+tavily_secret := "tavily-api-key"
 
 default:
   @just --list
@@ -85,6 +87,24 @@ user-show:
 # テストユーザーを削除（後片付け）
 user-delete:
   @pwsh -NoProfile -File scripts/test-user.ps1 -Action delete
+
+# ----------------------------------------------------------------------------
+# Tavily リモート MCP（Web 検索）の API キー — Key Vault へ投入
+# ----------------------------------------------------------------------------
+# キー本体は Terraform/state に入れず、ここで Key Vault に直接書き込む。
+# 値は $env:TAVILY_API_KEY から読む（コマンド履歴に秘密値を残さないため）。
+#   $env:TAVILY_API_KEY = "tvly-xxxx"; just tavily-set
+# アプリは実行時に Web App のマネージド ID でこの値を読む（再起動不要で反映）。
+tavily-set:
+  @if (-not $env:TAVILY_API_KEY) { Write-Error 'まず $env:TAVILY_API_KEY = "tvly-..." を設定してください'; exit 1 }; $vault = (terraform output -raw key_vault_name); az keyvault secret set --vault-name $vault --name "{{tavily_secret}}" --value $env:TAVILY_API_KEY --output none; Write-Host "Set {{tavily_secret}} in $vault"
+
+# Key Vault に入っている Tavily キーの「メタ情報」を確認（値は伏せて先頭だけ表示）
+tavily-show:
+  @$vault = (terraform output -raw key_vault_name); $v = (az keyvault secret show --vault-name $vault --name "{{tavily_secret}}" --query value -o tsv); if ($v) { Write-Host "$($v.Substring(0, [Math]::Min(8, $v.Length)))... (len=$($v.Length))" } else { Write-Host "未設定" }
+
+# Key Vault から Tavily キーを削除（ツールが消える挙動を体験する用）
+tavily-delete:
+  @$vault = (terraform output -raw key_vault_name); az keyvault secret delete --vault-name $vault --name "{{tavily_secret}}" --output none; Write-Host "Deleted {{tavily_secret}} from $vault"
 
 # ----------------------------------------------------------------------------
 # ローカル開発

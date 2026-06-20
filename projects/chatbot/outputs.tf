@@ -70,6 +70,24 @@ output "openai_deployment_name" {
   value       = azurerm_cognitive_deployment.chat.name
 }
 
+output "openai_gpt5_deployment_name" {
+  description = "gpt-5 デプロイ名（アプリの AZURE_OPENAI_RESPONSES_DEPLOYMENT / Responses API 用）"
+  value       = azurerm_cognitive_deployment.gpt5.name
+}
+
+# ----------------------------------------------------------------------------
+# Key Vault 情報
+# ----------------------------------------------------------------------------
+output "key_vault_name" {
+  description = "Key Vault 名（az keyvault secret set の --vault-name に使う）"
+  value       = azurerm_key_vault.main.name
+}
+
+output "key_vault_uri" {
+  description = "Key Vault の URI（アプリの KEY_VAULT_URI と同じ）"
+  value       = azurerm_key_vault.main.vault_uri
+}
+
 # ----------------------------------------------------------------------------
 # 動作確認用の CLI コマンド
 # ----------------------------------------------------------------------------

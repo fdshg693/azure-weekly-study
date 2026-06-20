@@ -15,10 +15,20 @@ const tools = require("./tools");
 
 const port = process.env.PORT || 3000;
 const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-const deployment = process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-4o-mini";
-// Responses API は新しめの api-version でのみ提供される（旧 2024-10-21 では未対応）。
-// Chat Completions 系も新 api-version で動くため、既定を Responses 対応版に引き上げる。
-const apiVersion = process.env.AZURE_OPENAI_API_VERSION || "2025-04-01-preview";
+// /chat は Responses API を使う。Responses 対応の推論モデル（gpt-5）のデプロイ名を使う。
+// gpt-4o-mini は非推論モデルで reasoning.effort を受け付けないため、ここでは使わない。
+// 解決順: 専用 env（gpt-5 デプロイ） → 旧 env（後方互換） → 既定 "gpt-5"。
+const deployment =
+  process.env.AZURE_OPENAI_RESPONSES_DEPLOYMENT ||
+  process.env.AZURE_OPENAI_DEPLOYMENT ||
+  "gpt-5";
+// Responses API は新しめの api-version でのみ提供される（旧 2024-10-21 では 404 になる）。
+// Chat Completions 用の AZURE_OPENAI_API_VERSION とはキーを分け、モデル併用時に
+// それぞれ別の api-version を指定できるようにする（共有すると両立できないため）。
+const apiVersion = process.env.AZURE_OPENAI_RESPONSES_API_VERSION || "2025-04-01-preview";
+// gpt-5 は推論モデル。チャット用途では推論を軽くしてレイテンシ・コストを抑える。
+// minimal / low / medium / high から選べる（env で上書き可）。
+const reasoningEffort = process.env.AZURE_OPENAI_REASONING_EFFORT || "low";
 
 // DefaultAzureCredential はローカル開発時は `az login` の資格情報、
 // App Service 上ではシステム割り当てマネージド ID を自動で使用する
@@ -32,7 +42,9 @@ const SYSTEM_PROMPT =
   "あなたは親切で簡潔に答える日本語アシスタントです。" +
   "ユーザーが自分自身の情報（氏名・メール・部署・勤務地など）を尋ねたら、" +
   "get_user_profile ツールが使える場合はそれを呼び出して正確に答えてください。" +
-  "ツールが使えない場合は、サインインすると自分の情報を取得できる旨を案内してください。";
+  "ツールが使えない場合は、サインインすると自分の情報を取得できる旨を案内してください。" +
+  "最新の情報や事実確認が必要なとき、Web 検索系のツール（Tavily）が使える場合は" +
+  "それを使って調べてから答えてください。";
 const MAX_HISTORY = 40;
 // ツール呼び出し → 結果を返して再生成、のループ上限（暴走防止）。
 const MAX_TOOL_ROUNDS = 5;
@@ -96,13 +108,15 @@ app.post("/chat", async (req, res) => {
   const input = [{ role: "system", content: SYSTEM_PROMPT }, ...sanitized];
 
   // ログイン状態に応じて、この会話で AI に渡すツールを出し分ける。
-  const availableTools = tools.toolsForRequest(req);
+  // Tavily キーを Key Vault から取得する場合があるため await する。
+  const availableTools = await tools.toolsForRequest(req);
 
   try {
     let response = await openai.responses.create({
       model: deployment,
       input,
       tools: availableTools,
+      reasoning: { effort: reasoningEffort },
     });
 
     // モデルがツールを呼んだら実行し、結果を返して再度生成させるループ。
@@ -134,6 +148,7 @@ app.post("/chat", async (req, res) => {
         model: deployment,
         input,
         tools: availableTools,
+        reasoning: { effort: reasoningEffort },
       });
     }
 
