@@ -2,6 +2,10 @@
 *.zip
 *.log
 
+# ======= 参照用外部ライブラリコピー =======
+
+projects/chatbot/app/openai-node
+
 # ======= Bicep ======= 
 
 # ARM 生成物

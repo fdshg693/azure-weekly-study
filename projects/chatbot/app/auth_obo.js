@@ -18,6 +18,32 @@ const REDIRECT_URI_OBO =
 const APP_API_SCOPE = CLIENT_ID ? `api://${CLIENT_ID}/access_as_user` : "";
 const GRAPH_SCOPES = ["User.Read"];
 
+// OBO フローが使えるか（Entra 設定済み＋アプリの API スコープを公開している前提）。
+const isOboConfigured = isConfigured && Boolean(CLIENT_ID);
+
+// 初回トークン（aud = api://<client-id>）を Graph トークン（aud = Graph）に OBO 交換する。
+// この交換こそが「ユーザー本人の権限で下流 API を叩く」OBO の核心。
+async function acquireGraphTokenViaObo(oboInitialToken) {
+  const oboResponse = await msalInstance.acquireTokenOnBehalfOf({
+    oboAssertion: oboInitialToken,
+    scopes: GRAPH_SCOPES,
+  });
+  return oboResponse.accessToken;
+}
+
+// OBO 交換後の Graph トークンで /me を呼ぶ。
+async function fetchGraphMe(graphToken) {
+  const { data } = await axios.get(`${GRAPH_API_ENDPOINT}v1.0/me`, {
+    headers: { Authorization: `Bearer ${graphToken}` },
+  });
+  return data;
+}
+
+// この会話/リクエストが OBO サインイン済みか（初回トークンを持っているか）。
+function hasOboSession(req) {
+  return Boolean(req.session?.oboInitialToken);
+}
+
 function decodeJwtPayload(jwt) {
   if (typeof jwt !== "string") return null;
   const parts = jwt.split(".");
@@ -94,11 +120,7 @@ async function profile(req, res) {
 
   let oboToken;
   try {
-    const oboResponse = await msalInstance.acquireTokenOnBehalfOf({
-      oboAssertion: initialToken,
-      scopes: GRAPH_SCOPES,
-    });
-    oboToken = oboResponse.accessToken;
+    oboToken = await acquireGraphTokenViaObo(initialToken);
   } catch (err) {
     console.error("[obo] acquireTokenOnBehalfOf error:", err);
     return res.status(502).render("profile_obo", {
@@ -120,9 +142,7 @@ async function profile(req, res) {
   console.log("[obo] OBO-exchanged token claims:", JSON.stringify(oboClaims, null, 2));
 
   try {
-    const { data } = await axios.get(`${GRAPH_API_ENDPOINT}v1.0/me`, {
-      headers: { Authorization: `Bearer ${oboToken}` },
-    });
+    const data = await fetchGraphMe(oboToken);
     res.render("profile_obo", {
       title: "プロファイル (OBO)",
       configured: true,
@@ -172,4 +192,14 @@ async function failTest(req, res) {
   }
 }
 
-module.exports = { signin, redirect, profile, failTest };
+module.exports = {
+  signin,
+  redirect,
+  profile,
+  failTest,
+  // チャットのツールから再利用する OBO ヘルパー
+  isOboConfigured,
+  hasOboSession,
+  acquireGraphTokenViaObo,
+  fetchGraphMe,
+};

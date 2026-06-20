@@ -68,6 +68,25 @@ auth-destroy:
   @pwsh -NoProfile -File scripts/destroy-entra-app.ps1 -DisplayName "{{entra_app_name}}"
 
 # ----------------------------------------------------------------------------
+# テストユーザー（別ユーザーでログインすると AI の答えが変わる体験用）
+# ----------------------------------------------------------------------------
+# OBO チャットは get_user_profile でサインイン本人の Graph /me を返す。
+# 自分とは別のテストユーザーを用意し、「誰でログインしたか」で結果が変わるのを体験する。
+# （作成・削除までを just で行い、ログイン操作はブラウザで手動）
+
+# Entra にテストユーザーを作成し、UPN と初期パスワードを表示
+user-create:
+  @pwsh -NoProfile -File scripts/test-user.ps1 -Action create
+
+# テストユーザーの現在のプロフィールを表示（読み取り専用）
+user-show:
+  @pwsh -NoProfile -File scripts/test-user.ps1 -Action show
+
+# テストユーザーを削除（後片付け）
+user-delete:
+  @pwsh -NoProfile -File scripts/test-user.ps1 -Action delete
+
+# ----------------------------------------------------------------------------
 # ローカル開発
 # ----------------------------------------------------------------------------
 
@@ -76,9 +95,20 @@ auth-destroy:
 dev:
   @$endpoint = (terraform output -raw openai_endpoint); $env:AZURE_OPENAI_ENDPOINT = $endpoint; Push-Location {{app_dir}}; npm install; npm start; Pop-Location
 
-# ローカル開発に必要な OpenAI ロールを自分自身に付与（初回のみ）
-grant-self:
-  @$me = (az ad signed-in-user show --query id -o tsv); $aoai = (terraform output -raw openai_account_name); $rg = (terraform output -raw resource_group_name); $sub = (az account show --query id -o tsv); az role assignment create --assignee $me --role "Cognitive Services OpenAI User" --scope "/subscriptions/$sub/resourceGroups/$rg/providers/Microsoft.CognitiveServices/accounts/$aoai"
+# ローカル開発に必要な OpenAI ロール（Cognitive Services OpenAI User）を自分に付与（初回のみ）
+grant-self: aoai-grant-self
+
+# 自分に Azure OpenAI のデータ操作ロールを付与（tools-demo.js / dev で 401 を解消）
+aoai-grant-self:
+  @pwsh -NoProfile -File scripts/openai-role.ps1 -Action grant
+
+# 自分のロール割り当て状況を確認（読み取り専用）
+aoai-role-show:
+  @pwsh -NoProfile -File scripts/openai-role.ps1 -Action show
+
+# 自分から OpenAI ロールを剥奪（401 に戻る挙動を体験する用）
+aoai-revoke-self:
+  @pwsh -NoProfile -File scripts/openai-role.ps1 -Action revoke
 
 # ----------------------------------------------------------------------------
 # 動作確認
