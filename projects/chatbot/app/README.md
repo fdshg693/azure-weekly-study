@@ -38,6 +38,8 @@ const openai = new AzureOpenAI({ endpoint, azureADTokenProvider, deployment, api
 - **モデル名・API バージョン・推論強度**（秘密でないアプリ設定）: [`config/models.js`](config/models.js) に集約（コミット対象）
 - **命名規約（規約A）**: Azure OpenAI のデプロイ名 = モデル名（`gpt-4o-mini` / `gpt-5`）。Terraform もこの規約でデプロイするため、アプリはデプロイ名を env から受け取らず config の値をそのまま使える。モデルを増やすときは `config/models.js` に 1 エントリ追加するだけ。
 
+> **チャット画面でのモデル切り替え**: `config/models.js` の `CHAT_MODELS` がチャット画面のドロップダウンの選択肢になる。`/chat` は Responses API を使うため推論モデル（`gpt-5`）も非推論モデル（`gpt-4o-mini`）も同じ口で呼べ、違いは `reasoning.effort` を渡すか否かだけ（`reasoningEffort: null` なら渡さない）。server.js はモデルごとに `AzureOpenAI` クライアントを生成してキャッシュし、リクエストの `model` id で選ぶ。未指定・不正な id は `DEFAULT_CHAT_MODEL_ID` にフォールバックする。フロントは選択値を localStorage（`aoai-chat-model`）に保持する。選択肢を増やすには `CHAT_MODELS` に 1 エントリ追加し、同名モデルを Azure にデプロイするだけ。
+
 > **API バージョン注意**: `/chat` は **Responses API**（`openai.responses.create`）を使うため、`config/models.js` の `reasoning.apiVersion` は Responses 対応の新しめのプレビュー版（例: `2025-04-01-preview`）が必要。旧 `2024-10-21` では Responses エンドポイントが無く 404 になる。
 
 ### `/chat` のツール実行ループ（function calling）

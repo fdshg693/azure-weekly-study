@@ -31,6 +31,15 @@
       </div>
       <div class="card mb-3">
         <div class="card-body">
+          <!-- モデル切り替え。値は server.js が渡す chatModels（id とラベル）から生成。 -->
+          <div class="d-flex align-items-center gap-2 mb-3">
+            <label for="model-select" class="form-label mb-0 small text-muted">モデル</label>
+            <select id="model-select" class="form-select form-select-sm" style="max-width: 280px;">
+              <% chatModels.forEach((m) => { %>
+                <option value="<%= m.id %>" <%= m.id === defaultModelId ? "selected" : "" %>><%= m.label %></option>
+              <% }); %>
+            </select>
+          </div>
           <div id="chat-log" class="mb-3" style="min-height: 240px; max-height: 60vh; overflow-y: auto;"></div>
           <form id="chat-form" class="d-flex gap-2">
             <input
@@ -57,7 +66,24 @@
         const log = document.getElementById("chat-log");
         const sendBtn = document.getElementById("send-btn");
         const clearBtn = document.getElementById("clear-btn");
+        const modelSelect = document.getElementById("model-select");
         const STORAGE_KEY = "aoai-chat-history";
+        const MODEL_KEY = "aoai-chat-model";
+
+        // 前回選んだモデルを復元（保存済みの id が選択肢に存在する場合のみ）。
+        try {
+          const savedModel = localStorage.getItem(MODEL_KEY);
+          if (savedModel && [...modelSelect.options].some((o) => o.value === savedModel)) {
+            modelSelect.value = savedModel;
+          }
+        } catch (_) {}
+
+        // 選択が変わったら保存しておく。
+        modelSelect.addEventListener("change", () => {
+          try {
+            localStorage.setItem(MODEL_KEY, modelSelect.value);
+          } catch (_) {}
+        });
 
         let history = [];
         try {
@@ -109,7 +135,8 @@
             const res = await fetch("/chat", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ messages: history }),
+              // 選択中のモデル id も送る。サーバー側で不正/未指定なら既定にフォールバックする。
+              body: JSON.stringify({ messages: history, model: modelSelect.value }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || "リクエストに失敗しました");

@@ -23,8 +23,9 @@ const { getBearerTokenProvider, DefaultAzureCredential } = require("@azure/ident
 const { MODELS } = require("../config/models");
 
 // エンドポイントだけ env（環境固有）。モデル名・api-version は config/models.js から。
+// このデモは Chat Completions（非推論）を試すので gpt-4o-mini を使う。
 const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-const { deployment, apiVersion } = MODELS.chat;
+const { deployment, apiVersion } = MODELS["gpt-4o-mini"];
 
 // DefaultAzureCredential はローカルでは `az login`、App Service 上では
 // マネージド ID を自動利用する（server.js と同じ認証パターン）。

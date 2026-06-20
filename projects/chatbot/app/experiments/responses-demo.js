@@ -28,12 +28,13 @@ const { getBearerTokenProvider, DefaultAzureCredential } = require("@azure/ident
 const { MODELS } = require("../config/models");
 
 const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-// モデル設定は config/models.js（推論モデル）から取得する。
+// モデル設定は config/models.js から取得する。このデモは推論モデル（gpt-5）の Responses API を試す。
 // ただし本スクリプトは「別デプロイで Responses API が通るか」を試す実験用なので、
 // その場限りの上書きとして CLI の --deployment だけ残す（既定は config の値）。
-const deployment = getFlag("--deployment") || MODELS.reasoning.deployment;
-const apiVersion = MODELS.reasoning.apiVersion;
-const reasoningEffort = MODELS.reasoning.reasoningEffort;
+const gpt5 = MODELS["gpt-5"];
+const deployment = getFlag("--deployment") || gpt5.deployment;
+const apiVersion = gpt5.apiVersion;
+const reasoningEffort = gpt5.reasoningEffort;
 
 // DefaultAzureCredential はローカルでは `az login`、App Service 上では
 // マネージド ID を自動利用する（server.js と同じ認証パターン）。

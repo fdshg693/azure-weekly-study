@@ -12,15 +12,11 @@ const { getBearerTokenProvider, DefaultAzureCredential } = require("@azure/ident
 const auth = require("./auth");
 const authObo = require("./auth_obo");
 const tools = require("./tools");
-const { MODELS } = require("./config/models");
+const { CHAT_MODELS, DEFAULT_CHAT_MODEL_ID, getChatModel } = require("./config/models");
 
 const port = process.env.PORT || 3000;
 // エンドポイントだけが環境固有値なので env から取得する。
 const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-// /chat は Responses API を使う。モデル名・api-version・推論強度は config/models.js に集約。
-// gpt-4o-mini は非推論モデルで reasoning.effort を受け付けないため、推論モデル設定を使う。
-// 命名規約（規約A）により deployment 名 = モデル名なので、env からは受け取らない。
-const { deployment, apiVersion, reasoningEffort } = MODELS.reasoning;
 
 // DefaultAzureCredential はローカル開発時は `az login` の資格情報、
 // App Service 上ではシステム割り当てマネージド ID を自動で使用する
@@ -28,7 +24,23 @@ const credential = new DefaultAzureCredential();
 const scope = "https://cognitiveservices.azure.com/.default";
 const azureADTokenProvider = getBearerTokenProvider(credential, scope);
 
-const openai = new AzureOpenAI({ endpoint, azureADTokenProvider, deployment, apiVersion });
+// AzureOpenAI クライアントは deployment / apiVersion をコンストラクタで固定するため、
+// 選択できるモデルごとに 1 つずつ用意してキャッシュしておく（リクエスト毎の生成を避ける）。
+// id -> { model: 設定, client: AzureOpenAI } のマップ。
+const clientsByModelId = new Map(
+  CHAT_MODELS.map((model) => [
+    model.id,
+    {
+      model,
+      client: new AzureOpenAI({
+        endpoint,
+        azureADTokenProvider,
+        deployment: model.deployment,
+        apiVersion: model.apiVersion,
+      }),
+    },
+  ])
+);
 
 const SYSTEM_PROMPT =
   "あなたは親切で簡潔に答える日本語アシスタントです。" +
@@ -69,6 +81,9 @@ app.get("/", (req, res) => {
     // チャットのプロフィールツールは OBO サインイン（initialToken）を使う
     oboSignedIn: Boolean(req.session?.oboAccount),
     authConfigured: auth.isConfigured,
+    // モデル切り替え用のドロップダウンに渡す（id と表示ラベルだけで十分）。
+    chatModels: CHAT_MODELS.map((m) => ({ id: m.id, label: m.label })),
+    defaultModelId: DEFAULT_CHAT_MODEL_ID,
   });
 });
 
@@ -95,6 +110,11 @@ app.post("/chat", async (req, res) => {
     return res.status(400).json({ error: "最後のメッセージは user である必要があります" });
   }
 
+  // 画面で選択されたモデルを解決する。未指定・不正な id は既定モデルにフォールバック。
+  const selected = getChatModel(req.body?.model);
+  const { deployment, reasoningEffort } = selected;
+  const openai = clientsByModelId.get(selected.id).client;
+
   // Responses API の input 配列。Chat Completions の messages とほぼ同じ形だが、
   // ツール呼び出し（function_call）と結果（function_call_output）も同じ配列に積んでいく。
   const input = [{ role: "system", content: SYSTEM_PROMPT }, ...sanitized];
@@ -103,13 +123,16 @@ app.post("/chat", async (req, res) => {
   // Tavily キーを Key Vault から取得する場合があるため await する。
   const availableTools = await tools.toolsForRequest(req);
 
+  // Responses API のリクエスト本体。reasoning は推論モデルのときだけ付ける
+  // （非推論モデルに reasoning を渡すとエラーになるため）。
+  const buildParams = (input) => {
+    const params = { model: deployment, input, tools: availableTools };
+    if (reasoningEffort) params.reasoning = { effort: reasoningEffort };
+    return params;
+  };
+
   try {
-    let response = await openai.responses.create({
-      model: deployment,
-      input,
-      tools: availableTools,
-      reasoning: { effort: reasoningEffort },
-    });
+    let response = await openai.responses.create(buildParams(input));
 
     // モデルがツールを呼んだら実行し、結果を返して再度生成させるループ。
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -136,12 +159,7 @@ app.post("/chat", async (req, res) => {
         });
       }
 
-      response = await openai.responses.create({
-        model: deployment,
-        input,
-        tools: availableTools,
-        reasoning: { effort: reasoningEffort },
-      });
+      response = await openai.responses.create(buildParams(input));
     }
 
     // output_text は最終的なテキスト出力を結合してくれる便利プロパティ。
