@@ -1,0 +1,82 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+# 名前付きボリューム（永続デモ用）と、権限デモ用ボリューム、Web コンテナ名。
+VOL := "dockerdemo-data"
+VOL2 := "dockerdemo-perm"
+WEB := "dockerdemo-web"
+IMG := "alpine"
+
+# 利用可能なコマンド一覧
+default:
+    @just --list
+
+# ──────────────────────────────────────────────────────────────
+# 実験A: 書き込み可能レイヤは揮発する（マウント無し）
+#   --rm でコンテナを使い捨てるので、何度叩いても毎回 "count is now 1"。
+#   コンテナの書き込みレイヤに書いた count は、コンテナ破棄と同時に消える。
+count-novol:
+    docker run --rm {{IMG}} sh -c 'n=$(cat /data/count 2>/dev/null || echo 0); n=$((n+1)); echo $n > /data/count; echo count is now $n'
+
+# ──────────────────────────────────────────────────────────────
+# 実験B: 名前付きボリュームなら永続する（出し入れ検証①）
+#   同じ count スクリプトでも、-v でボリュームを /data に載せると
+#   コンテナを --rm で捨てても値が残り、叩くたびに 1,2,3... と増える。
+#   count-novol と見比べて「消える/残る」を切り分ける。
+count-vol:
+    docker run --rm -v {{VOL}}:/data {{IMG}} sh -c 'n=$(cat /data/count 2>/dev/null || echo 0); n=$((n+1)); echo $n > /data/count; echo count is now $n'
+
+# ボリュームの一覧と、保存先（Mountpoint）を確認する。
+inspect:
+    docker volume ls
+    docker volume inspect {{VOL}}
+
+# ──────────────────────────────────────────────────────────────
+# 実験C: bind mount でホストの編集が即コンテナへ反映（出し入れ検証②）
+#   ./site をコンテナの公開ディレクトリに直結。site/index.html を
+#   ホスト側で書き換えて just show をもう一度叩くと、再起動なしで変わる。
+#   さらに「マウントによる隠蔽」も同時に起きている: nginx イメージに
+#   元から入っている既定ページが、上に被せた ./site に隠れて見えなくなる。
+serve:
+    docker run -d --name {{WEB}} -p 8080:80 -v "$PWD/site:/usr/share/nginx/html" nginx:alpine
+    Write-Host "http://localhost:8080 を開く。site/index.html を編集して just show で再確認。"
+
+# マウント無しで同じ nginx を別ポートに起動 → 既定ページが見える（隠蔽の対比）。
+serve-default:
+    docker run -d --name {{WEB}}-default -p 8081:80 nginx:alpine
+    Write-Host "http://localhost:8081 は隠蔽されていない既定ページ。"
+
+# bind mount したページを取得（ホスト編集後にもう一度叩くと変化する）。
+show:
+    Invoke-RestMethod http://localhost:8080
+
+# 既定ページ（マウント無し）を取得。
+show-default:
+    Invoke-RestMethod http://localhost:8081
+
+# Web コンテナを停止・削除する。
+web-stop:
+    -docker rm -f {{WEB}} {{WEB}}-default
+
+# ──────────────────────────────────────────────────────────────
+# 実験D: tmpfs はメモリ上・揮発（ディスクに残らない）
+#   /scratch は tmpfs。mount 出力で tmpfs と分かり、コンテナ終了で消える。
+tmpfs-demo:
+    docker run --rm --tmpfs /scratch:size=10m {{IMG}} sh -c 'echo hello > /scratch/x; ls -l /scratch; echo ---; mount | grep scratch'
+
+# ──────────────────────────────────────────────────────────────
+# 実験E: 所有権/権限の落とし穴
+#   空のボリュームを初めて /data に載せると root 所有で作られる。
+#   非 root ユーザー(1000)で書こうとすると Permission denied になる。
+perm-fail:
+    docker run --rm --user 1000:1000 -v {{VOL2}}:/data {{IMG}} sh -c 'echo hi > /data/x && echo "wrote ok" || echo "write FAILED (permission denied)"'
+
+# 修正: 一度 root で /data の所有者を 1000 に変える。その後 perm-fail を再実行すると成功する。
+perm-fix:
+    docker run --rm -v {{VOL2}}:/data {{IMG}} sh -c 'chown 1000:1000 /data; echo "chowned. now re-run: just perm-fail"'
+
+# ──────────────────────────────────────────────────────────────
+# 後片付け（コンテナとボリュームを削除）
+clean:
+    -docker rm -f {{WEB}} {{WEB}}-default
+    -docker volume rm {{VOL}} {{VOL2}}
+    Write-Host "cleaned."

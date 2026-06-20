@@ -1,0 +1,26 @@
+# クラスタ全体の玄関。application routing addon (マネージド NGINX) を使う。
+# simple / config-rollout と同じ Ingress クラスだが、こちらは workload-identity 名前空間。
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app
+  namespace: workload-identity
+spec:
+  ingressClassName: webapprouting.kubernetes.azure.com
+  rules:
+    - http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 80
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: front
+                port:
+                  number: 80

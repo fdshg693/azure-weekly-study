@@ -1,0 +1,35 @@
+# dev overlay。ベースを取り込み、dev 用の差分だけを足す。
+# dev は「最小構成」: レプリカ 1・控えめリソース (ベースのまま) で、
+# 上書きするのは namespace / 実イメージ / 設定 (env, message) / Ingress host のみ。
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# このオーバーレイの全リソースを hk-dev 名前空間に置く (namespace transformer)。
+namespace: hk-dev
+
+resources:
+  - ../../base
+  - namespace.yaml
+
+# 記号名 app-api / app-front を実レジストリ・タグへ変換する (images transformer)。
+# PLACEHOLDER_ACR は `just kz-up dev` が `kustomize edit set image` で実 ACR に置換する
+# (= 文字列 sed をやめ、Kustomize に image を構造的に差し替えさせる)。
+images:
+  - name: app-api
+    newName: PLACEHOLDER_ACR/hk/api
+    newTag: v1
+  - name: app-front
+    newName: PLACEHOLDER_ACR/hk/front
+    newTag: v1
+
+# 設定 (ConfigMap) を dev 値にマージ上書きする。
+patches:
+  - path: config-patch.yaml
+  # Ingress の host を dev 用に。host ベースで prod と衝突させない。
+  - target:
+      kind: Ingress
+      name: app
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: hk-dev.local

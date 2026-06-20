@@ -1,0 +1,150 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+# .env を自動で読み込む → 各レシピ内で $env:POSTGRES_USER 等が使える。
+set dotenv-load := true
+
+# コンテナ内で psql を叩く共通プレフィックス（-T で TTY を無効化＝標準入力パイプ可）。
+PSQL := "docker compose exec -T db psql -v ON_ERROR_STOP=1 -U $env:POSTGRES_USER -d $env:POSTGRES_DB"
+
+# 利用可能なコマンド一覧
+default:
+    @just --list
+
+# ──────────────────────────────────────────────────────────────
+# 基本操作
+# ──────────────────────────────────────────────────────────────
+
+# PostgreSQL を起動し、healthcheck が通る（受付可能）まで待つ。
+up:
+    docker compose up -d
+    Write-Host "DB の起動を待っています..." -ForegroundColor Cyan
+    do { Start-Sleep -Seconds 1 } until ((docker inspect -f '{{{{.State.Health.Status}}}}' db-index-explain) -eq 'healthy')
+    Write-Host "ready." -ForegroundColor Green
+
+# 300万行を投入（数十秒かかる。\timing で所要時間が出る）。
+seed:
+    Get-Content -Raw seed.sql | {{PSQL}}
+
+# 対話 psql に入る。
+psql:
+    docker compose exec db psql -U $env:POSTGRES_USER -d $env:POSTGRES_DB
+
+# 任意の SQL をワンショット実行: just q "SELECT count(*) FROM events;"
+q +SQL:
+    {{PSQL}} -c "{{SQL}}"
+
+# 今ある（自分で貼った）インデックス一覧を見る。
+indexes:
+    {{PSQL}} -c "\di+ idx_events_*"
+
+# 実験で作ったインデックスを全部消して初期状態（主キーのみ）に戻す。
+reset:
+    {{PSQL}} -c "DROP INDEX IF EXISTS idx_events_user_id, idx_events_user_amount, idx_events_amount, idx_events_status, idx_events_email, idx_events_email_lower;"
+    Write-Host "全実験インデックスを削除しました。" -ForegroundColor Yellow
+
+# 停止＋ボリューム削除（データも消える。やり直すときは up→seed から）。
+down:
+    docker compose down -v
+    Write-Host "停止しコンテナ/ボリュームを削除しました。" -ForegroundColor Yellow
+
+# ──────────────────────────────────────────────────────────────
+# 実験1: Seq Scan vs Index Scan（出し入れ検証①）
+#   同じクエリ(user_id=42)が、インデックスの有無で Seq Scan ⇄ Index Scan に変わる。
+# ──────────────────────────────────────────────────────────────
+
+# (a) インデックス無し → Seq Scan。実行時間と Buffers を覚えておく。
+e1-baseline:
+    {{PSQL}} -c "DROP INDEX IF EXISTS idx_events_user_id;"
+    Get-Content -Raw sql/explain_user_id.sql | {{PSQL}}
+
+# (b) user_id にインデックスを貼る → Index Scan に変わり時間が跳ねて速くなる。
+e1-index:
+    {{PSQL}} -c "CREATE INDEX idx_events_user_id ON events (user_id);"
+    Get-Content -Raw sql/explain_user_id.sql | {{PSQL}}
+
+# (c) もう一度外す → Seq Scan に戻る（因果の確認）。
+e1-drop:
+    {{PSQL}} -c "DROP INDEX IF EXISTS idx_events_user_id;"
+    Get-Content -Raw sql/explain_user_id.sql | {{PSQL}}
+
+# ──────────────────────────────────────────────────────────────
+# 実験2: 選択性が低いとインデックスは使われない
+#   status='paid' は約25%ヒット → インデックスを貼っても Seq Scan のまま。
+# ──────────────────────────────────────────────────────────────
+
+# status にインデックスを貼った上で EXPLAIN → それでも Seq Scan を選ぶことを確認。
+e2-lowselectivity:
+    {{PSQL}} -c "CREATE INDEX IF NOT EXISTS idx_events_status ON events (status);"
+    Get-Content -Raw sql/explain_status.sql | {{PSQL}}
+    {{PSQL}} -c "DROP INDEX IF EXISTS idx_events_status;"
+
+# ──────────────────────────────────────────────────────────────
+# 実験3: 複合インデックスの先頭列規則（出し入れ検証②）
+#   (user_id, amount) は user_id で絞れば効くが、amount 単独では効かない。
+# ──────────────────────────────────────────────────────────────
+
+# 複合インデックス (user_id, amount) を作成。
+e3-create:
+    {{PSQL}} -c "CREATE INDEX idx_events_user_amount ON events (user_id, amount);"
+    Write-Host "(user_id, amount) を作成。" -ForegroundColor Green
+
+# 先頭列 user_id で絞る → インデックスが効く。
+e3-leading:
+    Get-Content -Raw sql/explain_leading.sql | {{PSQL}}
+
+# 2列目 amount だけで絞る → 先頭列が無いので使えず Seq Scan。
+e3-nonleading:
+    Get-Content -Raw sql/explain_nonleading.sql | {{PSQL}}
+
+# 証明: amount 単独のインデックスを足すと、同じ amount 条件が Index Scan に変わる
+#       → さっき効かなかったのは「amount だから」ではなく「先頭列規則」だったと分かる。
+e3-prove:
+    {{PSQL}} -c "CREATE INDEX idx_events_amount ON events (amount);"
+    Get-Content -Raw sql/explain_nonleading.sql | {{PSQL}}
+    {{PSQL}} -c "DROP INDEX IF EXISTS idx_events_amount, idx_events_user_amount;"
+
+# ──────────────────────────────────────────────────────────────
+# 実験4: カバリングインデックス（INCLUDE）で Index Only Scan
+# ──────────────────────────────────────────────────────────────
+
+# 通常の (user_id) インデックス → Index Scan ＋ Heap Fetches（本体アクセス）あり。
+e4-plain:
+    {{PSQL}} -c "DROP INDEX IF EXISTS idx_events_user_amount; CREATE INDEX idx_events_user_id ON events (user_id);"
+    Get-Content -Raw sql/explain_covering.sql | {{PSQL}}
+
+# (user_id) INCLUDE (amount) → 取得列がインデックスに揃い Index Only Scan（Heap Fetches 激減）。
+e4-covering:
+    {{PSQL}} -c "DROP INDEX IF EXISTS idx_events_user_id; CREATE INDEX idx_events_user_amount ON events (user_id) INCLUDE (amount);"
+    Get-Content -Raw sql/explain_covering.sql | {{PSQL}}
+    {{PSQL}} -c "DROP INDEX IF EXISTS idx_events_user_amount;"
+
+# ──────────────────────────────────────────────────────────────
+# 実験5: LIKE は前方一致なら効く / 後方一致は効かない
+# ──────────────────────────────────────────────────────────────
+
+# 前方一致が効くように text_pattern_ops でインデックスを作成。
+e5-index:
+    {{PSQL}} -c "CREATE INDEX idx_events_email ON events (email text_pattern_ops);"
+    Write-Host "email text_pattern_ops インデックスを作成。" -ForegroundColor Green
+
+# 'user123%'（前方一致）→ Index Scan。
+e5-prefix:
+    Get-Content -Raw sql/explain_like_prefix.sql | {{PSQL}}
+
+# '%23@example.com'（後方一致）→ インデックスがあっても Seq Scan。
+e5-suffix:
+    Get-Content -Raw sql/explain_like_suffix.sql | {{PSQL}}
+
+# ──────────────────────────────────────────────────────────────
+# 実験6: 列に関数を噛ませるとインデックスが効かない → 式インデックスで救う
+# ──────────────────────────────────────────────────────────────
+
+# email にインデックスがあっても lower(email)=... は使えず Seq Scan。
+e6-baseline:
+    {{PSQL}} -c "CREATE INDEX IF NOT EXISTS idx_events_email ON events (email);"
+    Get-Content -Raw sql/explain_func.sql | {{PSQL}}
+
+# 式インデックス lower(email) を貼ると Index Scan に変わる。
+e6-fix:
+    {{PSQL}} -c "CREATE INDEX idx_events_email_lower ON events (lower(email));"
+    Get-Content -Raw sql/explain_func.sql | {{PSQL}}
+    {{PSQL}} -c "DROP INDEX IF EXISTS idx_events_email, idx_events_email_lower;"

@@ -1,0 +1,39 @@
+# prod overlay。ベース + dev と同じ仕組みだが、prod は「増やす」差分を多く持つ:
+#   - レプリカ 3 (replicas transformer)
+#   - リソース増 (resources-patch)
+#   - HPA を追加 (resources に hpa.yaml を足す)
+#   - 設定 (env, message) と Ingress host を prod 用に
+# 「同じベースから差分だけで別環境ができる」ことを dev と並べて体感する。
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: hk-prod
+
+resources:
+  - ../../base
+  - namespace.yaml
+  - hpa.yaml                  # prod だけ HPA を足す (dev には無い)
+
+images:
+  - name: app-api
+    newName: PLACEHOLDER_ACR/hk/api
+    newTag: v1
+  - name: app-front
+    newName: PLACEHOLDER_ACR/hk/front
+    newTag: v1
+
+# api の台数をベースの 1 → 3 に (replicas transformer)。
+replicas:
+  - name: api
+    count: 3
+
+patches:
+  - path: config-patch.yaml
+  - path: resources-patch.yaml
+  - target:
+      kind: Ingress
+      name: app
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: hk-prod.local

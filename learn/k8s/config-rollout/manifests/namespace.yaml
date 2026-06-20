@@ -1,0 +1,6 @@
+# このプロジェクトのリソースを simple (default 名前空間) から隔離する。
+# namespace は「論理的な仕切り」。同じクラスタ内で名前衝突や見え方を分けられる。
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: config-rollout

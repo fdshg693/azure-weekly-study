@@ -19,7 +19,6 @@ param tags object
 resource aks 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
   name: aksName
   location: location
-  // control plane の運用は Azure に任せる (記事の「頭脳を Azure に預ける」)。
   identity: { type: 'SystemAssigned' }
   properties: {
     dnsPrefix: aksName
@@ -34,7 +33,6 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
         type: 'VirtualMachineScaleSets'
       }
     ]
-    // 記事の `--enable-app-routing` 相当。マネージド NGINX (application routing
     // addon) を有効化し、ingressClassName: webapprouting.kubernetes.azure.com を使えるようにする。
     ingressProfile: {
       webAppRouting: {
@@ -48,5 +46,5 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
 output aksName string = aks.name
 output aksId string = aks.id
 
-// 記事の --attach-acr が AcrPull を付与する相手 = 各ノードの kubelet マネージド ID。
+// --attach-acr が AcrPull を付与する相手 = 各ノードの kubelet マネージド ID。
 output kubeletObjectId string = aks.properties.identityProfile.kubeletidentity.objectId

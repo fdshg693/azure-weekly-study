@@ -1,0 +1,9 @@
+# 実際の設定値（.env.example を雛形にユーザーが作成）。★ API_A_CLIENT_SECRET を含むので絶対にコミットしない。
+.env
+
+# .env から生成する SPA 設定（中身は公開情報だが、生成物なのでコミットしない）
+src/config.js
+
+# 各プロセスの依存（task api-middle / task api-downstream で npm install される）
+api-middle/node_modules
+api-downstream/node_modules

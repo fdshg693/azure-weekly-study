@@ -1,0 +1,23 @@
+# Kustomize の「ベース」。全環境に共通する素のマニフェスト集合。
+# 環境固有の値 (namespace / レプリカ数 / リソース / 設定 / 実イメージ名) は
+# ここには書かず、overlays/<env>/ 側で patch・transformer によって上書きする。
+#
+# コンテナ image は記号名 (app-api / app-front) のまま置き、
+# overlay の images: transformer が実レジストリ (ACR) とタグへ変換する。
+# → simple/config-rollout でやっていた __ACR_LOGIN_SERVER__ の文字列置換を、
+#   Kustomize が構造的に理解する images transformer に置き換えるのが本章の肝。
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - configmap.yaml
+  - api-deployment.yaml
+  - front-deployment.yaml
+  - services.yaml
+  - ingress.yaml
+
+# 全リソースに付く共通ラベル (どの env でも付く)。
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: helm-kustomize
+    includeSelectors: false

@@ -1,0 +1,18 @@
+# prod 環境の差分。台数を増やし、リソースを増やし、HPA を有効化する。
+# Kustomize の prod overlay (replicas=3 / resources-patch / hpa.yaml 追加) と
+# 同じ結果を、Helm では「values の上書き」で表現する。
+env: prod
+message: "prod 環境です (Helm values-prod)"
+
+api:
+  replicas: 3
+  resources:
+    requests: { cpu: 150m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+
+hpa:
+  enabled: true
+  minReplicas: 3
+
+ingress:
+  host: hk-prod.local

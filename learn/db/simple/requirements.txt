@@ -1,0 +1,3 @@
+# ローカルから PostgreSQL に接続する小さなスクリプト用。
+# psycopg3 のバイナリ同梱版 (ビルド不要で Windows でもそのまま入る)。
+psycopg[binary]==3.2.1

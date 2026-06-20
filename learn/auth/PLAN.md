@@ -48,10 +48,11 @@
 - **Entra での学び**：Client Credentials Flow、**アプリケーション許可（application permission）と委任許可（delegated permission）の違い**、管理者同意。
 - **掴む概念**：**委任 vs アプリケーション許可**（「ユーザーの代理」か「アプリそのもの」か）、ユーザーコンテキストの有無、管理者同意。`entra-spa-login` の「ユーザーが同意して委任」と対比。
 
-### 案5. トークンを引き継ぐ ―― 多段 API でアイデンティティを伝播（on-behalf-of）
+### 案5. トークンを引き継ぐ ―― 多段 API でアイデンティティを伝播（on-behalf-of）✅ 実装済み
 
 - **レベル**：★★★
 - **依存**：案1（api-protect）／案4 の概念
+- **状態**：`./on-behalf-of` に作成済み（SPA → 中間 API(A) → 下流 API(B)。chain-naive=生転送で 401／chain-obo=OBO 交換で 200 の対比、`task consent`/`revoke-consent` で A→B 委任同意を出し入れ）。詳細は [auth/CLAUDE.md](./CLAUDE.md)
 - **解く問題（一般）**：API A がユーザーのトークンを受け、さらに下流の API B を「**そのユーザーとして**」呼びたい。受け取ったトークンはそのまま転送できない（`aud` が違う）。
 - **Entra での学び**：On-Behalf-Of Flow（トークン交換）。
 - **掴む概念**：トークンの **`aud` 境界**、トークン交換、多段呼び出しでのアイデンティティ伝播。案1 で「`aud` を検証する」ことがなぜ重要だったかが、ここで効いてくる。

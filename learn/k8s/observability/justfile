@@ -1,0 +1,89 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+# このプロジェクトは simple で作った ACR / AKS を「そのまま流用」する。
+# 新しい Bicep は無い。simple のデプロイ (resource_group=rg-aks-demo / name=main) の
+# 出力を読んで、同じクラスタの observability 名前空間にデプロイする。
+# → 先に simple 側で `just group-create` → `just deploy-local` が済んでいる前提。
+#
+# 監視の有効化 (Container Insights / マネージド Prometheus + Grafana) は az の多段処理に
+# なるので scripts/*.ps1 に分離し、justfile はそれを呼ぶ薄い入口に徹する。
+# 単一の kubectl で済むものだけインラインで書く。
+
+ns := "observability"
+
+default:
+  @just --list
+
+# === デプロイ (観察対象アプリ) ===
+
+# AKS の接続情報を取り込む。
+credentials resource_group="rg-aks-demo" deployment_name="main":
+  @pwsh -NoProfile -File scripts/credentials.ps1 -ResourceGroup {{resource_group}} -DeploymentName {{deployment_name}}
+
+# api/ のイメージを simple の ACR にビルド (observ/api:v1)。
+acr-build resource_group="rg-aks-demo" deployment_name="main":
+  @pwsh -NoProfile -File scripts/acr-build.ps1 -ResourceGroup {{resource_group}} -DeploymentName {{deployment_name}}
+
+# マニフェスト (Deployment / Service / HPA) を適用する (image の ACR を Bicep 出力で置換)。
+apply resource_group="rg-aks-demo" deployment_name="main":
+  @pwsh -NoProfile -File scripts/apply.ps1 -ResourceGroup {{resource_group}} -DeploymentName {{deployment_name}}
+
+# K8s 側を一括セットアップ (認証情報 → 適用)。
+k8s-up resource_group="rg-aks-demo":
+  @just credentials {{resource_group}}; just apply {{resource_group}}
+
+# Pod / Service / HPA の状態をまとめて表示する。
+status:
+  @kubectl get pods,svc,hpa -n {{ns}} -o wide
+
+# === 監視の有効化 / ダッシュボード ===
+
+# Container Insights (Log Analytics) を有効化する。安価な第一歩。
+monitoring-insights resource_group="rg-aks-demo":
+  @pwsh -NoProfile -File scripts/enable-insights.ps1 -ResourceGroup {{resource_group}}
+
+# マネージド Prometheus + Managed Grafana を有効化する (★課金あり)。
+# 片付けは `just monitoring-off`。
+monitoring-on resource_group="rg-aks-demo" grafana_name="":
+  @pwsh -NoProfile -File scripts/enable-prometheus.ps1 -ResourceGroup {{resource_group}} -GrafanaName "{{grafana_name}}"
+
+# ダッシュボードへの入口 (Portal リンク / Grafana URL) を表示する。
+links resource_group="rg-aks-demo" grafana_name="":
+  @pwsh -NoProfile -File scripts/links.ps1 -ResourceGroup {{resource_group}} -GrafanaName "{{grafana_name}}"
+
+# 監視を片付けて課金を止める (Prometheus 無効化 + Insights 無効化 + Grafana 削除)。
+monitoring-off resource_group="rg-aks-demo" grafana_name="":
+  @pwsh -NoProfile -File scripts/disable.ps1 -ResourceGroup {{resource_group}} -GrafanaName "{{grafana_name}}"
+
+# === 因果を確かめる実験 ===
+
+# /work を多重に叩いて CPU を上げ、HPA のスケールアウトを起こす (Ctrl-C で停止)。
+load concurrency="20" ms="50":
+  @pwsh -NoProfile -File scripts/load.ps1 -Concurrency {{concurrency}} -Ms {{ms}}
+
+# HPA の判断 (現在 CPU % / レプリカ数) を実況で見る。load と並行して別ターミナルで。
+watch-hpa:
+  @kubectl get hpa api -n {{ns}} -w
+
+# Pod の増減を実況で見る。
+watch-pods:
+  @kubectl get pods -n {{ns}} -l app=api -w
+
+# 1 つの Pod だけを burn_seconds 秒焼く (Grafana で単一 Pod の CPU 線が跳ねるのを見る)。
+burn-one burn_seconds="60":
+  @kubectl exec -n {{ns}} deploy/api -- /bin/sh -c "wget -q -O- 'http://localhost:8080/burn?seconds={{burn_seconds}}&threads=2'"
+
+# 任意の 1 Pod を /crash で落とし、再起動 (restartCount 増加) を観察する。
+crash:
+  @kubectl exec -n {{ns}} deploy/api -- /bin/sh -c "wget -q -O- http://localhost:8080/crash"; echo "数秒後に kubectl get pods -n {{ns}} で RESTARTS を確認"
+
+# 自己修復の観察: Pod を 1 つ手で消して、ReplicaSet が再作成するのを見る。
+self-heal:
+  @$p = (kubectl get pod -n {{ns}} -l app=api -o "jsonpath={.items[0].metadata.name}"); kubectl delete pod -n {{ns}} $p; kubectl get pods -n {{ns}} -l app=api
+
+# === 後片付け ===
+
+# この名前空間だけ削除する (simple のクラスタ/インフラには触れない)。
+# 監視リソース (Grafana 等) は `just monitoring-off` で別途消すこと。
+destroy:
+  @kubectl delete namespace {{ns}}

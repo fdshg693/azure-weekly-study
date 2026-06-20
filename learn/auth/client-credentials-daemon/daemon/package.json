@@ -1,0 +1,13 @@
+{
+  "name": "client-credentials-daemon",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "デーモン（バッチ）— Client Credentials Flow でアプリ自身としてトークンを取り、保護 API を呼ぶ最小実装（ユーザー不在）",
+  "scripts": {
+    "start": "node daemon.js"
+  },
+  "dependencies": {
+    "jose": "^5.9.6"
+  }
+}

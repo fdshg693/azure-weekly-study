@@ -1,0 +1,14 @@
+# クラスタ内の安定した入口。負荷生成器はこの Service を叩き、全 Pod に分散させる。
+# 外部公開 (Ingress) は持たない → simple の単一 NGINX / 外部 IP と衝突しない。
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: observability
+spec:
+  selector:
+    app: api
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP

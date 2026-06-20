@@ -1,0 +1,26 @@
+# Ingress。host を values から差し込み、dev/prod を分ける。
+# ブラウザ観察は `just pf <env>` (port-forward) 推奨なのは Kustomize 版と同じ。
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app
+spec:
+  ingressClassName: webapprouting.kubernetes.azure.com
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 80
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: front
+                port:
+                  number: 80

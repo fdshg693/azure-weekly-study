@@ -93,7 +93,7 @@ module aks './modules/aks.bicep' = {
   }
 }
 
-// 記事の `--attach-acr` 相当: AKS の kubelet マネージド ID に AcrPull を付与する。
+// `--attach-acr` 相当: AKS の kubelet マネージド ID に AcrPull を付与する。
 // これにより imagePullSecret なしで ACR から pull できる。
 module acrRole './modules/acr-role.bicep' = {
   name: 'acrPullRole'

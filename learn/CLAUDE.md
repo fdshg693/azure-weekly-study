@@ -17,8 +17,11 @@
 OAuth 2.0 / OpenID Connect を土台に Entra ID を学ぶ。`entra-spa-login`（SPA で認証の最小ループ・
 ID/アクセストークンの違い・PKCE）→ `api-protect`（自前リソースサーバー・JWT 検証・401/403）→
 `app-roles-rbac`（App ロール・`scp` と `roles` の違い・クレームベース認可）→ `confidential-web`
-（コンフィデンシャルクライアント・client_secret・BFF）と、**認証→認可、パブリック→コンフィデンシャル**へ
-段階的に深化済み。
+（コンフィデンシャルクライアント・client_secret・BFF）→ `client-credentials-daemon`(**ユーザー不在**の
+Client Credentials Flow・**委任許可 vs アプリケーション許可**・`.default`・管理者同意・`idtyp=app`）→
+`on-behalf-of`（**多段 API**：SPA→中間 API(A)→下流 API(B)。**`aud` 境界**・**On-Behalf-Of トークン交換**
+（`jwt-bearer`/`on_behalf_of`）・**アイデンティティ伝播**・委任同意 `oauth2PermissionGrant` の出し入れ）と、
+**認証→認可、パブリック→コンフィデンシャル、ユーザー有→ユーザー不在、単段→多段**へ段階的に深化済み。
 
 ## func — Azure Functions
 
@@ -56,3 +59,60 @@ Event Grid トリガー化・キーレス化は未着手。
 `ephemeral_agent`（定義をコード内に持つエフェメラル、ツールの実行場所＝サーバー vs ローカルの違い）、
 `hosted_agent`（ホステッドの入口、サンプル取得のみで自作デプロイは未着手）。
 コントロール／データプレーンの 2 層、Foundry のロールとモデルデプロイ課金感覚を学習。
+
+## k8s — AKS（Azure Kubernetes Service）
+
+`./k8s`（詳細: [k8s/CLAUDE.md](./k8s/CLAUDE.md)、計画: [k8s/PLAN.md](./k8s/PLAN.md)）
+技術: Bicep / just / Azure CLI / kubectl、サンプルは Flask API + nginx 静的フロント。
+
+`simple`（ACR/AKS/AcrPull/PostgreSQL を Bicep で束ね、Deployment・ClusterIP Service・単一 Ingress・
+HPA・Secret の `envFrom`・probe・自己修復まで一周）→ `config-rollout`（simple のインフラを流用し、
+**ConfigMap（非機密）vs Secret（機密）** の使い分け、**RollingUpdate（maxSurge/maxUnavailable）** と
+`rollout undo`、壊れた readiness probe でロールアウトが止まる挙動、namespace 隔離を体感）→
+`workload-identity`（**Workload Identity** で DB 接続を**キーレス化**。UAMI + Federated Identity Credential と
+ServiceAccount の紐付け、PostgreSQL の Entra 認証でパスワードレス接続。ロール付け外しで接続が変わり
+**認証と認可の分離**を体感）→ `helm-kustomize`（**マニフェストのテンプレート化と環境差分**。同じベースを
+**Kustomize の overlay** と **Helm の values** の両方で dev/prod に出し分け、`__ACR__` の sed を images transformer /
+`--set` に置換。レンダリング差分で「同じベース→差分だけで 2 環境」を可視化し、2 ツールを比較）→
+`observability`（**可観測性**。既存クラスタに監視を後付けし、Container Insights（Log Analytics）→ マネージド
+Prometheus + Managed Grafana の 2 段階で有効化。`/work` で負荷を掛けて HPA のスケールアウトを起こし、
+**同じ時間軸の CPU グラフから「HPA がなぜスケールしたか」を裏側で理解**。`crash`/`self-heal` で再起動も観察）。
+最小構成 → 設定とロールアウト → キーレス化 → テンプレート化 → 可観測性、へ段階的に深化中。永続化・TLS は未着手。
+
+## vm — 仮想マシン（IaaS）
+
+`./vm`（詳細: [vm/CLAUDE.md](./vm/CLAUDE.md)、計画: [vm/PLAN.md](./vm/PLAN.md)）
+技術: Bicep / just / Azure CLI。
+
+`simple`（VNet/Subnet/NSG/Public IP/NIC/Linux VM を最小構成で作り、**SSH 鍵認証（パスワードレス）**で
+ログイン。NSG の 22/80 を出し入れして到達を切り替え、**「プロセスが動く」と「NSG で届く」は別**を体感。
+**`stop` vs `deallocate`** の課金差、**Dynamic な Public IP が再起動で変わる**様子を確認）。
+network トピックの「到達確認の道具」から脱し、VM 本体を主役にマネージドとの責任分界を学び始めた段階。
+cloud-init・Managed Identity・自前 DB は未着手。
+
+## db — マネージドデータベース（PaaS）
+
+`./db`（詳細: [db/CLAUDE.md](./db/CLAUDE.md)、計画: [db/PLAN.md](./db/PLAN.md)）
+技術: Bicep / just / Azure CLI / Python（`psycopg`）。
+
+`simple`（**PostgreSQL Flexible Server**（Burstable B1ms / v16 / パスワード認証 / パブリックエンドポイント）と
+論理 DB を Bicep で作り、ローカルの Python から**テーブル作成→INSERT→SELECT**を一周。`.env` に接続情報、
+`init-env` が PGPASSWORD 生成、`deploy` が PGHOST 書き戻し。**ファイアウォール規則は Bicep に書かず** just で
+出し入れし、作成直後は許可 0 件で繋がらない→自分の IP を足す／外すで接続が通る⇄拒否される、で
+**「マネージド DB はデフォルトで閉じている／経路はあるが許可制」**を体感（vm の NSG と同型）。TLS 必須・
+マネージド DB の課金感覚（VM の deallocate に当たる気軽な停止が無い）も学習）。
+vm（自前 DB＝IaaS）と対比した PaaS の入口。Entra 認証パスワードレス・Private Endpoint・PITR/スケール・Cosmos は未着手。
+
+## automate — 自動化／バッチ実行
+
+`./automate`（詳細: [automate/CLAUDE.md](./automate/CLAUDE.md)）
+技術: Bicep / just / Azure CLI（`az containerapp` / `az automation`）/ ACR Tasks。
+
+「**常駐させない実行モデル**」が軸。`simple`（**Azure Container Apps Jobs** の Schedule トリガーで
+「起動 → 仕事 → 終了」を cron 定期実行 ＋ 手動起動。Bicep で Log Analytics/Environment/ACR/UAMI(AcrPull)/Job を
+作り、ワーカーは終了コードで成否を表す。**App と Job の違い**、**execution と replica**、`parallelism`/
+`replicaRetryLimit` の出し入れ、MI+AcrPull のキーレス pull を体感）→ `runbook`（**Azure Automation** の
+PowerShell runbook で VM を Start/Stop。イメージを持たず Azure 提供ランタイムで走らせ、アカウントの
+**system-assigned MI で Azure を操作**。**Reader/VM Contributor の付け外し**で認証と認可の分離、
+**Automation 変数**で設定とコードの分離、**タイムゾーン付きスケジュール**を体感。`vm/simple` の deallocate を
+runbook に自動化させる位置づけ）。Event(KEDA) 駆動・Webhook は未着手。

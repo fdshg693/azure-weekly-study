@@ -60,6 +60,14 @@ status:
 self-heal-demo:
   @kubectl get pods -l app=api; $pod = kubectl get pods -l app=api -o "jsonpath={.items[0].metadata.name}"; Write-Host "deleting $pod ..."; kubectl delete pod $pod; kubectl get pods -l app=api
 
-# リソースグループごと削除する (LB / IP もまとめて消える)。
+# アプリ層 (Deployment/Service/Ingress/HPA) だけ default 名前空間から削除する。
+# クラスタ/ACR/PostgreSQL は残すので、同じクラスタを流用する config-rollout 等に
+# 明け渡せる。特に simple と config-rollout の Ingress は同じ単一 NGINX/IP で
+# `/` と `/api` を奪い合うため、片方を試す前にもう片方のアプリ層は止めておくと混乱しない。
+# (delete はリソース名で照合するので image の __ACR_LOGIN_SERVER__ 置換は不要)
+app-down:
+  @kubectl delete -f manifests/api-deployment.yaml -f manifests/front-deployment.yaml -f manifests/services.yaml -f manifests/ingress.yaml -f manifests/hpa.yaml --ignore-not-found
+
+# リソースグループごと削除する (LB / IP もまとめて消える)。アプリ層だけ消すなら app-down。
 destroy resource_group="rg-aks-demo":
   @az group delete --name {{resource_group}} --yes --no-wait

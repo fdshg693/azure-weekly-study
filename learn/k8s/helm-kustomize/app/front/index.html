@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>helm-kustomize front</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 44rem; margin: 3rem auto; padding: 0 1rem; }
+      pre { background: #f4f4f4; padding: 1rem; border-radius: 8px; overflow-x: auto; }
+      button { padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer; }
+      .badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 999px; color: #fff; font-weight: 600; }
+      .dev { background: #08c; }
+      .prod { background: #c30; }
+      .other { background: #888; }
+      .row { margin: 0.4rem 0; }
+      label { user-select: none; }
+    </style>
+  </head>
+  <body>
+    <h1>📦 helm-kustomize — front</h1>
+    <p>
+      同じベースのマニフェストを <strong>Kustomize の overlay</strong> / <strong>Helm の values</strong> で
+      <code>dev</code> / <code>prod</code> に出し分けたとき、応答がどう変わるかを観察するページ。
+      <code>/api</code> を叩いて <strong>env</strong>・<strong>message</strong>・<strong>pod</strong> を見る。
+    </p>
+
+    <div class="row">env: <span id="env" class="badge other">?</span></div>
+    <div class="row">message: <strong id="msg">?</strong></div>
+    <div class="row">応答した pod: <code id="pod">?</code>（prod は複数レプリカで入れ替わる）</div>
+
+    <p>
+      <button onclick="callApi()">GET /api (1 回)</button>
+      <label><input type="checkbox" id="poll" onchange="togglePoll()" /> 1 秒ごとに自動更新</label>
+    </p>
+    <pre id="out">(まだ呼んでいません)</pre>
+
+    <script>
+      let timer = null;
+      async function callApi() {
+        const out = document.getElementById("out");
+        try {
+          const res = await fetch("/api");
+          const json = await res.json();
+          out.textContent = JSON.stringify(json, null, 2);
+          const envEl = document.getElementById("env");
+          const env = json.env ?? "?";
+          envEl.textContent = env;
+          envEl.className = "badge " + (env === "dev" ? "dev" : env === "prod" ? "prod" : "other");
+          document.getElementById("msg").textContent = json.message ?? "?";
+          document.getElementById("pod").textContent = json.pod ?? "?";
+        } catch (e) {
+          out.textContent = "error: " + e;
+        }
+      }
+      function togglePoll() {
+        const on = document.getElementById("poll").checked;
+        if (on) { timer = setInterval(callApi, 1000); callApi(); }
+        else { clearInterval(timer); timer = null; }
+      }
+    </script>
+  </body>
+</html>

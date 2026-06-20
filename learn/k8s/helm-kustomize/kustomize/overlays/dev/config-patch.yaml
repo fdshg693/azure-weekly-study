@@ -1,0 +1,9 @@
+# dev の設定。ベースの app-config に「同じ name で」マージされ、data の値が上書きされる
+# (strategic merge patch)。name が一致するのが結合のキー。
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  APP_ENV: "dev"
+  APP_MESSAGE: "dev 環境です (Kustomize overlay)"

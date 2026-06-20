@@ -1,0 +1,104 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+# ----------------------------------------------------------------------------
+# 変数
+# ----------------------------------------------------------------------------
+RESOURCE_GROUP := "rg-db-learn-simple"
+LOCATION       := "japaneast"
+ADMIN_USER     := "pgadmin"
+DB_NAME        := "appdb"
+# ルート直下の共有 venv の Python (リポジトリ共通方針)。venv レシピで作成。
+PY             := "../../../.venv/Scripts/python.exe"
+
+# 利用可能なコマンド一覧
+default:
+    @just --list
+
+# ----------------------------------------------------------------------------
+# 準備: venv と .env
+# ----------------------------------------------------------------------------
+# ルート直下の共有 venv を作り、接続スクリプトの依存 (psycopg) を入れる。
+venv:
+    if (-not (Test-Path "../../../.venv")) { python -m venv ../../../.venv }
+    {{PY}} -m pip install --upgrade pip
+    {{PY}} -m pip install -r requirements.txt
+
+# .env を作り、PGPASSWORD をランダム生成して書き込む (既にあれば何もしない)。
+init-env:
+    if (Test-Path .env) { Write-Host ".env は既にあります (再生成しません)"; exit 0 }
+    Copy-Item .env.example .env
+    $pw = -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 24 | ForEach-Object {[char]$_})
+    (Get-Content .env) -replace '^PGPASSWORD=.*', "PGPASSWORD=$pw" | Set-Content .env
+    (Get-Content .env) -replace '^PGUSER=.*',     "PGUSER={{ADMIN_USER}}" | Set-Content .env
+    (Get-Content .env) -replace '^PGDATABASE=.*', "PGDATABASE={{DB_NAME}}" | Set-Content .env
+    Write-Host ".env を作成し、ランダムパスワードを設定しました"
+
+# ----------------------------------------------------------------------------
+# デプロイ / 破棄
+# ----------------------------------------------------------------------------
+# RG 作成 + Bicep デプロイ。.env の PGPASSWORD を渡し、完了後に PGHOST を書き戻す。
+deploy: init-env
+    az group create --name {{RESOURCE_GROUP}} --location {{LOCATION}}
+    $pw = (Select-String -Path .env -Pattern '^PGPASSWORD=(.*)').Matches.Groups[1].Value; \
+    az deployment group create \
+      --resource-group {{RESOURCE_GROUP}} \
+      --template-file main.bicep \
+      --parameters adminUsername={{ADMIN_USER}} adminPassword="$pw" databaseName={{DB_NAME}}
+    just write-host
+    Write-Host "デプロイ完了。まだ誰も繋げません (ファイアウォール許可なし)。`just allow-my-ip` で自分の IP を開けてください。"
+
+# Bicep 出力の FQDN を .env の PGHOST に書き込む (deploy から呼ばれる)。
+write-host:
+    $fqdn = az postgres flexible-server list --resource-group {{RESOURCE_GROUP}} --query "[0].fullyQualifiedDomainName" -o tsv; \
+    (Get-Content .env) -replace '^PGHOST=.*', "PGHOST=$fqdn" | Set-Content .env; \
+    Write-Host "PGHOST=$fqdn を .env に書きました"
+
+# リソースグループごと削除 (使い終わったら必ず実行)
+destroy:
+    az group delete --name {{RESOURCE_GROUP}} --yes --no-wait
+
+# ----------------------------------------------------------------------------
+# 接続 (ローカルの Python スクリプトから)
+# ----------------------------------------------------------------------------
+# テーブル作成 → INSERT → SELECT を一周。許可 IP の有無で成否が変わる。
+connect:
+    {{PY}} connect.py
+
+# ----------------------------------------------------------------------------
+# 実験: ファイアウォール規則 (自分の IP) を出し入れして到達が変わるのを見る
+# ----------------------------------------------------------------------------
+# サーバー名を引く (内部利用)。
+server-name:
+    @az postgres flexible-server list --resource-group {{RESOURCE_GROUP}} --query "[0].name" -o tsv
+
+# 現在のグローバル IP を表示
+my-ip:
+    @(Invoke-RestMethod -Uri "https://api.ipify.org")
+
+# 自分の IP を許可するファイアウォール規則を追加 → この後 `just connect` が通る
+allow-my-ip:
+    $server = az postgres flexible-server list --resource-group {{RESOURCE_GROUP}} --query "[0].name" -o tsv; \
+    $ip = Invoke-RestMethod -Uri "https://api.ipify.org"; \
+    Write-Host "自分の IP: $ip を許可します"; \
+    az postgres flexible-server firewall-rule create \
+      --resource-group {{RESOURCE_GROUP}} --name $server \
+      --rule-name ClientIP --start-ip-address $ip --end-ip-address $ip; \
+    Write-Host "許可しました。`just connect` で繋がることを確認してください。"
+
+# 自分の IP の許可規則を削除 → この後 `just connect` は拒否される
+deny-my-ip:
+    $server = az postgres flexible-server list --resource-group {{RESOURCE_GROUP}} --query "[0].name" -o tsv; \
+    az postgres flexible-server firewall-rule delete \
+      --resource-group {{RESOURCE_GROUP}} --name $server --rule-name ClientIP --yes; \
+    Write-Host "許可を外しました。`just connect` が拒否/タイムアウトすることを確認してください。"
+
+# 現在のファイアウォール規則一覧を表示
+show-fw:
+    $server = az postgres flexible-server list --resource-group {{RESOURCE_GROUP}} --query "[0].name" -o tsv; \
+    az postgres flexible-server firewall-rule list \
+      --resource-group {{RESOURCE_GROUP}} --name $server -o table
+
+# サーバーの状態 (起動状況・バージョン等) を表示
+status:
+    az postgres flexible-server list --resource-group {{RESOURCE_GROUP}} \
+      --query "[0].{name:name, state:state, version:version, fqdn:fullyQualifiedDomainName}" -o table

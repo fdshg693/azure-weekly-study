@@ -1,0 +1,32 @@
+# front の Deployment (ベース)。/api を api Service にプロキシする nginx。
+# 環境差分の主役は API 側なので front は全環境 1 レプリカで固定。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: front
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: front
+  template:
+    metadata:
+      labels:
+        app: front
+    spec:
+      containers:
+        - name: front
+          image: app-front         # 記号名。overlay の images transformer が ACR/タグへ変換
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+          resources:
+            requests: { cpu: "25m", memory: "32Mi" }
+            limits: { cpu: "100m", memory: "64Mi" }

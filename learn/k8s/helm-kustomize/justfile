@@ -1,0 +1,86 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+# helm-kustomize: simple で作った ACR / AKS を「そのまま流用」する (新しい Bicep は無い)。
+# DB は使わず、テンプレート化 (Kustomize / Helm) と環境差分 (dev / prod) に集中する。
+# 先に simple 側で `just group-create` → `just deploy-local` が済んでいる前提。
+#
+# az 出力を読む多段処理や image 注入は scripts/*.ps1 に分離し、ここは薄い入口に保つ。
+# kustomize / helm CLI が必要 (`just check-tools` で確認、無ければ README の導入手順)。
+
+default:
+  @just --list
+
+# === 共通 (どちらのツールでも先に必要) ===
+
+# kustomize / helm が入っているか確認する。
+check-tools:
+  @kustomize version; helm version
+
+# AKS の接続情報を取り込む。
+credentials resource_group="rg-aks-demo" deployment_name="main":
+  @pwsh -NoProfile -File scripts/credentials.ps1 -ResourceGroup {{resource_group}} -DeploymentName {{deployment_name}}
+
+# api/ front/ のイメージを simple の ACR にビルド (hk/api:v1 / hk/front:v1)。
+acr-build resource_group="rg-aks-demo" deployment_name="main":
+  @pwsh -NoProfile -File scripts/acr-build.ps1 -ResourceGroup {{resource_group}} -DeploymentName {{deployment_name}}
+
+# === Kustomize ===
+
+# overlay を「レンダリング」して中身を見る (クラスタに触れない)。例: just kz-render prod
+kz-render env="dev":
+  @kubectl kustomize kustomize/overlays/{{env}}
+
+# dev と prod のレンダリング差分を並べて見る (環境差分の可視化)。← この章の主目的
+kz-render-diff:
+  @pwsh -NoProfile -File scripts/render-diff.ps1 -Tool kustomize
+
+# overlay をデプロイ (実 ACR を kustomize edit set image で注入してから apply)。例: just kz-up prod
+kz-up env="dev" resource_group="rg-aks-demo" deployment_name="main":
+  @pwsh -NoProfile -File scripts/kz-deploy.ps1 -Action apply -Env {{env}} -ResourceGroup {{resource_group}} -DeploymentName {{deployment_name}}
+
+# クラスタの実体と overlay の差分 (apply 前の影響確認)。例: just kz-diff prod
+kz-diff env="dev" resource_group="rg-aks-demo" deployment_name="main":
+  @pwsh -NoProfile -File scripts/kz-deploy.ps1 -Action diff -Env {{env}} -ResourceGroup {{resource_group}} -DeploymentName {{deployment_name}}
+
+# overlay を削除する (image 注入不要なので placeholder のまま delete できる)。
+kz-down env="dev":
+  @kubectl delete -k kustomize/overlays/{{env}} --ignore-not-found
+
+# === Helm ===
+
+# values を当てて「レンダリング」して中身を見る。例: just hl-render prod
+hl-render env="dev":
+  @helm template app helm/app --values helm/app/values-{{env}}.yaml
+
+# dev と prod のレンダリング差分を並べて見る (Kustomize 版と同じ観察を Helm で)。
+hl-render-diff:
+  @pwsh -NoProfile -File scripts/render-diff.ps1 -Tool helm
+
+# chart をデプロイ (upgrade --install)。実 ACR は --set image.registry で注入。例: just hl-up prod
+hl-up env="dev" resource_group="rg-aks-demo" deployment_name="main":
+  @pwsh -NoProfile -File scripts/hl-deploy.ps1 -Env {{env}} -ResourceGroup {{resource_group}} -DeploymentName {{deployment_name}}
+
+# リリースの状態・適用済み values を見る。例: just hl-status prod
+hl-status env="dev":
+  @helm status app-{{env}} --namespace hk-{{env}}; helm get values app-{{env}} --namespace hk-{{env}}
+
+# リリースを削除する。例: just hl-down prod
+hl-down env="dev":
+  @helm uninstall app-{{env}} --namespace hk-{{env}}
+
+# === 観察 ===
+
+# 指定環境の front を localhost に port-forward してブラウザで開く (front が /api をプロキシ)。
+# 例: just pf dev 8081 / 別ターミナルで just pf prod 8082 → dev と prod を並べて見比べる。
+pf env="dev" port="8081":
+  @kubectl port-forward -n hk-{{env}} svc/front {{port}}:80
+
+# 指定環境の Pod / Service / Ingress / HPA / ConfigMap をまとめて表示。例: just status prod
+status env="dev":
+  @kubectl get pods,svc,ingress,hpa,configmap -n hk-{{env}}
+
+# === 後片付け ===
+
+# 両環境を消す (Kustomize/Helm どちらで作っていても namespace ごと消す)。
+destroy:
+  @kubectl delete namespace hk-dev hk-prod --ignore-not-found

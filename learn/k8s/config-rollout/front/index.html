@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>config-rollout front</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 44rem; margin: 3rem auto; padding: 0 1rem; }
+      pre { background: #f4f4f4; padding: 1rem; border-radius: 8px; overflow-x: auto; }
+      button { padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer; }
+      .badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 999px; background: #0b5; color: #fff; font-weight: 600; }
+      .row { margin: 0.4rem 0; }
+      label { user-select: none; }
+    </style>
+  </head>
+  <body>
+    <h1>🔧 config-rollout — front</h1>
+    <p>
+      ConfigMap (非機密の挙動) と ローリングアップデート (バージョン入れ替え) を観察するページ。
+      <code>/api</code> を叩いて <strong>version</strong> と <strong>message</strong> の変化を見る。
+    </p>
+
+    <div class="row">いま応答した version: <span id="ver" class="badge">?</span></div>
+    <div class="row">message: <strong id="msg">?</strong></div>
+
+    <p>
+      <button onclick="callApi()">GET /api (1 回)</button>
+      <label><input type="checkbox" id="poll" onchange="togglePoll()" /> 1 秒ごとに自動更新 (ロールアウト観察用)</label>
+    </p>
+    <pre id="out">(まだ呼んでいません)</pre>
+
+    <script>
+      let timer = null;
+      async function callApi() {
+        const out = document.getElementById("out");
+        try {
+          const res = await fetch("/api");
+          const json = await res.json();
+          out.textContent = JSON.stringify(json, null, 2);
+          document.getElementById("ver").textContent = json.version ?? "?";
+          document.getElementById("msg").textContent = json.message ?? "?";
+        } catch (e) {
+          out.textContent = "error: " + e;
+        }
+      }
+      function togglePoll() {
+        const on = document.getElementById("poll").checked;
+        if (on) { timer = setInterval(callApi, 1000); callApi(); }
+        else { clearInterval(timer); timer = null; }
+      }
+    </script>
+  </body>
+</html>

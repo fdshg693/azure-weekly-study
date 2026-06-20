@@ -1,0 +1,42 @@
+# API の Deployment (ベース)。replicas は最小の 1、リソースも控えめ。
+# overlay 側で replicas transformer / resources patch によって prod だけ増やす。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  replicas: 1                      # 既定。prod overlay が replicas transformer で 3 に上書き
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+        - name: api
+          image: app-api           # 記号名。overlay の images transformer が ACR/タグへ変換
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: app-config   # APP_ENV / APP_MESSAGE を env として注入
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:              # prod overlay の resources-patch で増やす
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "250m"
+              memory: "128Mi"

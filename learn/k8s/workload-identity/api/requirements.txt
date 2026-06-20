@@ -1,0 +1,5 @@
+flask==3.0.3
+gunicorn==22.0.0
+psycopg[binary]==3.2.1
+# Workload Identity のトークン交換 (DefaultAzureCredential) に使う。
+azure-identity==1.17.1

@@ -1,0 +1,13 @@
+# 非機密の設定置き場。Secret と違い中身は base64 ですらなく平文で持つ
+# (= 機密を入れてはいけない)。API はこの値を envFrom で環境変数として受け取る。
+#
+# 重要な因果: ConfigMap を書き換えても、既存 Pod の env は起動時に固定されたまま。
+# 反映するには Pod を入れ替える必要がある (`kubectl rollout restart`)。
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: config-rollout
+data:
+  APP_MESSAGE: "hello from v1 (ConfigMap で書き換え可能)"
+  FEATURE_GREETING: "off"   # "on" にすると /api に greeting フィールドが増える

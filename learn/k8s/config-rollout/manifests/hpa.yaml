@@ -1,0 +1,22 @@
+# 負荷に応じて API Pod 数を自動増減する。
+# この章では resources.requests を変えて「発火タイミングがどう動くか」を観察する実験に使う。
+# (averageUtilization=50% は "requests.cpu に対する割合" なので requests を下げると発火しやすくなる)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api
+  namespace: config-rollout
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  minReplicas: 4               # Deployment の replicas(4) と揃え、無負荷でもロールアウトを 4 Pod で観察できるようにする
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50

@@ -1,0 +1,55 @@
+# API の Deployment。このプロジェクトの主役。
+# image の __ACR_LOGIN_SERVER__ は justfile の `apply` レシピが Bicep 出力の
+# acrLoginServer に置換してから kubectl へ流す (simple と同じ仕組み)。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: config-rollout
+spec:
+  replicas: 4                        # ロールアウト中の入れ替わりを見やすくするため多め
+  selector:
+    matchLabels:
+      app: api
+  # --- ローリングアップデート戦略 (この章のもう一つの主役) ---
+  # 古い Pod を一気に消さず、新旧を少しずつ入れ替える。下の数字を変えると
+  # 「同時に何個まで欠けてよいか / 何個まで余分に立ててよいか」が変わる。
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1              # 望ましい数(4)に対し同時に欠けてよい上限
+      maxSurge: 1                    # 望ましい数(4)を超えて一時的に立ててよい上限
+  minReadySeconds: 5                 # Ready になってから次へ進むまでの待ち (観察しやすく)
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+        - name: api
+          image: __ACR_LOGIN_SERVER__/config/api:v1   # justfile の rollout-* で差し替える
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: db-conn        # 機密 (DB 接続情報) は Secret から
+            - configMapRef:
+                name: app-config     # 非機密 (メッセージ/フラグ) は ConfigMap から
+          readinessProbe:            # リクエストを受けられる状態か。壊れた v2 はここで落ちる
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 3
+          livenessProbe:             # 生きているか (ダメなら再起動)
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:                # スケジューラが配置に使う確保量 (HPA の分母にも効く)
+              cpu: "100m"
+              memory: "128Mi"
+            limits:                  # 使いすぎへの歯止め
+              cpu: "500m"
+              memory: "256Mi"

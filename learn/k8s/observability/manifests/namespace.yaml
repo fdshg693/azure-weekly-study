@@ -1,0 +1,6 @@
+# このプロジェクトのリソースを simple (default 名前空間) から隔離する。
+# 監視ダッシュボードでも namespace=observability で絞って見られる。
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability

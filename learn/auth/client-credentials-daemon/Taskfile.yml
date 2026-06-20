@@ -1,0 +1,53 @@
+# Taskfile（https://taskfile.dev）。
+# PowerShell の実体は scripts/*.ps1 に切り出し、ここからは呼び出すだけにしてある
+# （巨大ワンライナーを避け、各操作を素直な .ps1 として読めるようにするため。sibling プロジェクトと同じ方針）。
+# このプロジェクトには SPA / config.js 生成は無い：クライアントはブラウザではなく「デーモン（サーバー上のバッチ）」。
+version: '3'
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  register:
+    desc: 自前 API（アプリケーション許可ロール）とデーモン（コンフィデンシャル）を作り、シークレットを発行する（一度だけ）
+    cmds:
+      - pwsh -NoProfile -File scripts/register.ps1
+
+  tenant:
+    desc: 現在 az でログイン中のテナント ID を表示する（.env の TENANT_ID 用）
+    cmds:
+      - az account show --query tenantId -o tsv
+
+  grant:
+    desc: デーモンのアプリに Tasks.Process.All を付与する（=アプリケーション許可の管理者同意。要管理者権限）
+    cmds:
+      - pwsh -NoProfile -File scripts/grant.ps1
+
+  revoke:
+    desc: デーモンのアプリから Tasks.Process.All を取り消す（grant の逆。/api/tasks が 403 に戻る）
+    cmds:
+      - pwsh -NoProfile -File scripts/revoke.ps1
+
+  grants:
+    desc: デーモンのアプリに今付いているアプリケーション許可を一覧する
+    cmds:
+      - pwsh -NoProfile -File scripts/show-grants.ps1
+
+  api:
+    desc: 自前 API（リソースサーバー）を起動する（初回は jose を npm install）。別ターミナルで起動しっぱなしにする
+    cmds:
+      - pwsh -NoProfile -Command "if (-not (Test-Path api/node_modules)) { Write-Host '依存をインストール中 (jose)...' -ForegroundColor Cyan; Push-Location api; npm install; Pop-Location }"
+      - node api/server.js
+
+  run:
+    desc: デーモンを 1 回走らせる（トークン取得 → 中身表示 → /api/whoami・/api/tasks を呼ぶ）。api を先に起動しておくこと
+    cmds:
+      - pwsh -NoProfile -Command "if (-not (Test-Path daemon/node_modules)) { Write-Host '依存をインストール中 (jose)...' -ForegroundColor Cyan; Push-Location daemon; npm install; Pop-Location }"
+      - node daemon/daemon.js
+
+  unregister:
+    desc: 2 つのアプリ登録を削除する（.env の CLIENT_ID / API_CLIENT_ID を使用。シークレット・SP も一緒に消える）
+    cmds:
+      - pwsh -NoProfile -File scripts/unregister.ps1

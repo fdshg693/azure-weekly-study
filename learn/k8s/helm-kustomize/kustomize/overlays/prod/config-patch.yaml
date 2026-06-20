@@ -1,0 +1,8 @@
+# prod の設定。dev と同じ仕組み (name 一致でマージ) で値だけ prod 用に。
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  APP_ENV: "prod"
+  APP_MESSAGE: "prod 環境です (Kustomize overlay)"

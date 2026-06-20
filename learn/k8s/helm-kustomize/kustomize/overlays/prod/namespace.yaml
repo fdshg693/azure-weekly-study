@@ -1,0 +1,5 @@
+# prod 環境の名前空間。dev (hk-dev) と隔離する。
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hk-prod

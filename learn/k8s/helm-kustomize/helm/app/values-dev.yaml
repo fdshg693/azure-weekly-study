@@ -1,0 +1,7 @@
+# dev 環境の差分。dev は最小構成なので、設定と host を変えるだけ
+# (台数・リソース・HPA は values.yaml の既定 = 控えめ のまま)。
+env: dev
+message: "dev 環境です (Helm values-dev)"
+
+ingress:
+  host: hk-dev.local

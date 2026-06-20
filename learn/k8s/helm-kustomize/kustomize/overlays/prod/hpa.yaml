@@ -1,0 +1,20 @@
+# prod だけに足す HPA。namespace は overlay の namespace transformer が hk-prod を付ける。
+# minReplicas は prod の replicas(3) と揃える。averageUtilization は requests.cpu に対する割合。
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50

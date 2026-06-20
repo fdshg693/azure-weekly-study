@@ -1,0 +1,67 @@
+# Taskfile（https://taskfile.dev）。
+# PowerShell の実体は scripts/*.ps1 に切り出し、ここからは呼び出すだけにしてある
+# （巨大ワンライナーを避け、各操作を素直な .ps1 として読めるようにするため。sibling プロジェクトと同じ方針）。
+#
+# このプロジェクトは「多段 API」：SPA（ユーザー）→ API A（中間／:3000）→ API B（下流／:3001）。
+# API A は「リソースサーバー」かつ「コンフィデンシャルクライアント」の二役で、受け取ったユーザートークンを
+# On-Behalf-Of 交換して API B を「そのユーザーとして」呼ぶ。だから API を 2 つ起動する点が他案と違う。
+version: '3'
+
+vars:
+  PORT: '5173'        # SPA 配信ポート
+  API_A_PORT: '3000'  # 中間 API（OBO の主役）
+  API_B_PORT: '3001'  # 下流 API
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  register:
+    desc: Entra に「下流 API(B)」「中間 API(A)＝コンフィデンシャル」「SPA」の 3 つのアプリ登録を作成・配線する（一度だけ）
+    cmds:
+      - pwsh -NoProfile -File scripts/register.ps1
+
+  tenant:
+    desc: 現在 az でログイン中のテナント ID を表示する（.env の TENANT_ID 用）
+    cmds:
+      - az account show --query tenantId -o tsv
+
+  consent:
+    desc: 中間 API(A) が下流 API(B) を「ユーザーの代理」で呼ぶ委任許可に管理者同意を与える（OBO の前提。要管理者権限）
+    cmds:
+      - pwsh -NoProfile -File scripts/consent.ps1
+
+  revoke-consent:
+    desc: 上の管理者同意を取り消す（consent の逆。OBO 交換が AADSTS65001 で失敗するようになる）
+    cmds:
+      - pwsh -NoProfile -File scripts/revoke-consent.ps1
+
+  config:
+    desc: .env から src/config.js を生成する（SPA は API A 宛のスコープだけ知っていればよい）
+    cmds:
+      - pwsh -NoProfile -File scripts/gen-config.ps1
+
+  api-downstream:
+    desc: 下流 API(B) を起動する（初回は jose を npm install）。別ターミナルで起動しっぱなしにする
+    cmds:
+      - pwsh -NoProfile -Command "if (-not (Test-Path api-downstream/node_modules)) { Write-Host '依存をインストール中 (jose)...' -ForegroundColor Cyan; Push-Location api-downstream; npm install; Pop-Location }"
+      - node api-downstream/server.js
+
+  api-middle:
+    desc: 中間 API(A) を起動する（初回は jose を npm install）。別ターミナルで起動しっぱなしにする。先に api-downstream を起動しておくこと
+    cmds:
+      - pwsh -NoProfile -Command "if (-not (Test-Path api-middle/node_modules)) { Write-Host '依存をインストール中 (jose)...' -ForegroundColor Cyan; Push-Location api-middle; npm install; Pop-Location }"
+      - node api-middle/server.js
+
+  serve:
+    desc: SPA をローカル配信する（config 生成も実施）。API を呼ぶには別ターミナルで api-downstream / api-middle。Ctrl+C で停止
+    deps: [config]
+    cmds:
+      - python -m http.server {{.PORT}} --directory src
+
+  unregister:
+    desc: 3 つのアプリ登録を削除する（.env の SPA_CLIENT_ID / API_A_CLIENT_ID / API_B_CLIENT_ID を使用）
+    cmds:
+      - pwsh -NoProfile -File scripts/unregister.ps1

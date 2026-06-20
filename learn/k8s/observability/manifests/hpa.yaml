@@ -1,0 +1,22 @@
+# CPU 使用率に応じて Pod 数を自動増減する。
+# このプロジェクトでは「HPA がなぜスケールしたか」を監視ダッシュボードの裏側
+# (CPU 使用率の時系列) から理解するのが狙い。
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api
+  namespace: observability
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50      # requests.cpu(100m) の 50% = 50m を超えたらスケールアウト

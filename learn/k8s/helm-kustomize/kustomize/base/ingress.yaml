@@ -1,0 +1,31 @@
+# クラスタの玄関 (application routing addon = マネージド NGINX)。
+# simple/config-rollout と同じ単一 NGINX を共有するため、dev/prod が衝突しないよう
+# host を分ける (overlay の host-patch が hk-dev.local / hk-prod.local に上書き)。
+# host ベースなら同じ外部 IP でも Host ヘッダで dev/prod を振り分けられる。
+#
+# 注: ブラウザでの観察は Ingress ではなく `just pf <env>` (port-forward) を推奨。
+#     front の nginx が /api をプロキシするので port-forward だけで完結する。
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app
+spec:
+  ingressClassName: webapprouting.kubernetes.azure.com
+  rules:
+    - host: app.local            # overlay が hk-dev.local / hk-prod.local に置換
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 80
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: front
+                port:
+                  number: 80

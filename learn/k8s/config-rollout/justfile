@@ -1,0 +1,92 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+# このプロジェクトは simple で作った ACR / AKS / PostgreSQL を「そのまま流用」する。
+# 新しい Bicep は無い。simple のデプロイ (resource_group=rg-aks-demo / name=main) の
+# 出力を読んで、同じクラスタの config-rollout 名前空間にデプロイする。
+# → 先に simple 側で `just group-create` → `just deploy-local` が済んでいる前提。
+#
+# az 出力を読んで多段処理する複雑なレシピは scripts/*.ps1 に分離し、
+# ここではそれを呼ぶだけ (巨大ワンライナーを避けて可読性を保つ)。
+# 単一の kubectl で済むものだけインラインで書く。
+
+ns := "config-rollout"
+
+default:
+  @just --list
+
+# AKS の接続情報を取り込む。
+credentials resource_group="rg-aks-demo" deployment_name="main":
+  @pwsh -NoProfile -File scripts/credentials.ps1 -ResourceGroup {{resource_group}} -DeploymentName {{deployment_name}}
+
+# api/ front/ のイメージを simple の ACR にビルド (v1 / v2 / v2-bad / front)。
+acr-build resource_group="rg-aks-demo" deployment_name="main":
+  @pwsh -NoProfile -File scripts/acr-build.ps1 -ResourceGroup {{resource_group}} -DeploymentName {{deployment_name}}
+
+# DB 接続情報を Secret(db-conn) として作る。pg_password は simple の deploy と同じ値。
+# 例: just secret-create rg-aks-demo "ChangeMe_Strong#Pass1"
+secret-create resource_group="rg-aks-demo" pg_password="" deployment_name="main":
+  @pwsh -NoProfile -File scripts/secret-create.ps1 -PgPassword "{{pg_password}}" -ResourceGroup {{resource_group}} -DeploymentName {{deployment_name}}
+
+# マニフェストを適用する (image の ACR を Bicep 出力で置換)。API は v1 で始まる。
+apply resource_group="rg-aks-demo" deployment_name="main":
+  @pwsh -NoProfile -File scripts/apply.ps1 -ResourceGroup {{resource_group}} -DeploymentName {{deployment_name}}
+
+# K8s 側を一括セットアップ (認証情報 → Secret+namespace → 適用)。
+k8s-up resource_group="rg-aks-demo" pg_password="":
+  @just credentials {{resource_group}}; just secret-create {{resource_group}} "{{pg_password}}"; just apply {{resource_group}}
+
+# Pod / Service / Ingress / HPA / ConfigMap の状態をまとめて表示する。
+status:
+  @kubectl get pods,svc,ingress,hpa,configmap -n {{ns}}
+
+# Ingress に払い出された外部 IP を表示する。
+ingress-ip:
+  @kubectl get ingress app -n {{ns}} -o "jsonpath={.status.loadBalancer.ingress[0].ip}"
+
+# Pod の入れ替わりを実況で観察する (Ctrl-C で抜ける)。ロールアウト中に別ターミナルで。
+watch:
+  @kubectl get pods -n {{ns}} -l app=api -w
+
+# === ConfigMap 実験 (非機密の設定変更) ===
+
+# APP_MESSAGE を書き換える。反映には続けて `just config-reload` が必要。
+set-message msg:
+  @pwsh -NoProfile -File scripts/set-config.ps1 -Key APP_MESSAGE -Value "{{msg}}"
+
+# FEATURE_GREETING を on/off する (on で /api に greeting フィールドが増える)。要 config-reload。
+set-feature on_off="on":
+  @pwsh -NoProfile -File scripts/set-config.ps1 -Key FEATURE_GREETING -Value "{{on_off}}"
+
+# ConfigMap の変更を Pod に反映する (ローリングで Pod を入れ替える)。
+config-reload:
+  @kubectl rollout restart deployment/api -n {{ns}}; kubectl rollout status deployment/api -n {{ns}}
+
+# === ローリングアップデート / ロールバック実験 ===
+
+# API を指定タグに切り替える (既定 v2)。例: just rollout v2 / just rollout v2-bad / just rollout v1
+rollout tag="v2" resource_group="rg-aks-demo" deployment_name="main":
+  @pwsh -NoProfile -File scripts/rollout.ps1 -Tag {{tag}} -ResourceGroup {{resource_group}} -DeploymentName {{deployment_name}}
+
+# 進行中ロールアウトの完了を待つ (v2-bad なら timeout で止まったまま)。
+rollout-status:
+  @kubectl rollout status deployment/api -n {{ns}} --timeout=60s
+
+# これまでの改訂履歴を見る。
+rollout-history:
+  @kubectl rollout history deployment/api -n {{ns}}
+
+# 直前の改訂に戻す (壊れた v2 から復旧する典型操作)。
+rollout-undo:
+  @kubectl rollout undo deployment/api -n {{ns}}; kubectl rollout status deployment/api -n {{ns}}
+
+# === HPA 実験 (任意) ===
+
+# 一時 Pod から /api を叩き続けて負荷をかけ、HPA のスケールを観察する (Ctrl-C で停止)。
+load:
+  @kubectl run -n {{ns}} loadgen --image=busybox --restart=Never --rm -i --tty -- /bin/sh -c "while true; do wget -q -O- http://api/api > /dev/null; done"
+
+# === 後片付け ===
+
+# この名前空間だけ削除する (simple のクラスタ/インフラには触れない)。
+destroy:
+  @kubectl delete namespace {{ns}}

@@ -1,0 +1,24 @@
+# 内部向けの安定した入口 (ClusterIP)。front の nginx は "api" 名で API を引く。
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+spec:
+  selector:
+    app: api
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: front
+spec:
+  selector:
+    app: front
+  ports:
+    - port: 80
+      targetPort: 80
+  type: ClusterIP

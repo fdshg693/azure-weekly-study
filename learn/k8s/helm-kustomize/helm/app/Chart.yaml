@@ -1,0 +1,8 @@
+apiVersion: v2
+name: app
+description: helm-kustomize 学習用の最小アプリ (api + front) を 1 チャートにまとめたもの
+type: application
+# チャート自体のバージョン (パッケージの版)。
+version: 0.1.0
+# 中のアプリの版 (イメージタグの既定にも使う)。
+appVersion: "v1"

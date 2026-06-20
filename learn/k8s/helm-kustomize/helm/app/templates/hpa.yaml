@@ -1,0 +1,23 @@
+# HPA は values.hpa.enabled が true のときだけ生成する。
+# これが「prod だけ HPA が出る」を Helm 流に表現したもの (条件付きテンプレート)。
+# → Kustomize では prod overlay の resources に hpa.yaml を足して同じ結果にした。
+{{- if .Values.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  minReplicas: {{ .Values.hpa.minReplicas }}
+  maxReplicas: {{ .Values.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.hpa.targetCPUUtilizationPercentage }}
+{{- end }}

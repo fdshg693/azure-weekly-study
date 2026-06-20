@@ -1,0 +1,61 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+# 既定リソースグループ・リージョン
+rg := "rg-automate-simple"
+loc := "japaneast"
+
+default:
+  @just --list
+
+# リソースグループを作成する。
+group-create:
+  @az group create --name {{rg}} --location {{loc}}
+
+# Job はイメージを参照するだけなのでビルド前でも通る / Bicep をデプロイ (LAW/Env/ACR/MI/Job)。
+deploy:
+  @az deployment group create --resource-group {{rg}} --template-file main.bicep --parameters main.bicepparam
+
+# ワーカーイメージを ACR Tasks でクラウドビルド & push する (hello-job:v1)。
+build:
+  @$acr = az deployment group show --resource-group {{rg}} --name main --query properties.outputs.acrName.value -o tsv; az acr build --registry $acr --image hello-job:v1 ./app
+
+# デプロイ → ビルドを一括実行する。
+up:
+  @just deploy; just build
+
+# デプロイ出力 (ACR 名 / Job 名 / Log Analytics ID) を表示する。
+outputs:
+  @$d = az deployment group show --resource-group {{rg}} --name main | ConvertFrom-Json; [pscustomobject]@{ acrName = $d.properties.outputs.acrName.value; jobName = $d.properties.outputs.jobName.value; lawCustomerId = $d.properties.outputs.lawCustomerId.value } | Format-List
+
+# Job を手動で起動する (Schedule トリガーでも job start で即時実行できる)。
+start:
+  @$job = az deployment group show --resource-group {{rg}} --name main --query properties.outputs.jobName.value -o tsv; az containerapp job start --name $job --resource-group {{rg}}
+
+# 実行履歴 (execution) を一覧する。Status が Succeeded / Failed / Running になる。
+executions:
+  @$job = az deployment group show --resource-group {{rg}} --name main --query properties.outputs.jobName.value -o tsv; az containerapp job execution list --name $job --resource-group {{rg}} --query "[].{name:name, status:properties.status, start:properties.startTime}" -o table
+
+# 直近の stdout ログを Log Analytics から表示する (取り込みに数分の遅延あり)。
+logs:
+  @$d = az deployment group show --resource-group {{rg}} --name main | ConvertFrom-Json; $cid = $d.properties.outputs.lawCustomerId.value; $job = $d.properties.outputs.jobName.value; $q = "ContainerAppConsoleLogs_CL | where ContainerAppName_s == '$job' | project TimeGenerated, Log_s | order by TimeGenerated desc | take 30"; az monitor log-analytics query --workspace $cid --analytics-query $q -o table
+
+# cron を差し替えて再デプロイする。例: just set-cron "0 */1 * * *"  (毎時 0 分)
+set-cron cron:
+  @az deployment group create --resource-group {{rg}} --template-file main.bicep --parameters main.bicepparam cronExpression='{{cron}}'
+
+# わざと失敗する設定で再デプロイ → 手動起動し、リトライ & Failed を観察する。
+fail-demo:
+  @az deployment group create --resource-group {{rg}} --template-file main.bicep --parameters main.bicepparam failJob=true; $job = az deployment group show --resource-group {{rg}} --name main --query properties.outputs.jobName.value -o tsv; az containerapp job start --name $job --resource-group {{rg}}
+
+# 失敗設定を元に戻す (正常終了するように再デプロイ)。
+fail-off:
+  @az deployment group create --resource-group {{rg}} --template-file main.bicep --parameters main.bicepparam failJob=false
+
+# 1 実行で複数レプリカを並列実行する設定で再デプロイ → 手動起動。
+# 例: just scale-demo 3 3  (3 並列・3 成功で完了)
+scale-demo parallelism="3" completion="3":
+  @az deployment group create --resource-group {{rg}} --template-file main.bicep --parameters main.bicepparam parallelism={{parallelism}} replicaCompletionCount={{completion}}; $job = az deployment group show --resource-group {{rg}} --name main --query properties.outputs.jobName.value -o tsv; az containerapp job start --name $job --resource-group {{rg}}
+
+# リソースグループごと削除する。
+destroy:
+  @az group delete --name {{rg}} --yes --no-wait

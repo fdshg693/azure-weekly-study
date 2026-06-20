@@ -1,0 +1,123 @@
+set shell := ["powershell.exe", "-c"]
+
+# ----------------------------------------------------------------------------
+# 変数
+# ----------------------------------------------------------------------------
+RESOURCE_GROUP := "rg-vm-learn-simple"
+LOCATION       := "japaneast"
+ADMIN_USER     := "azureuser"
+VM_NAME        := "vm-simple"
+NSG_NAME       := "nsg-simple"
+PIP_NAME       := "pip-simple"
+# 使う SSH 公開鍵 / 秘密鍵 (keygen レシピで作れる)
+SSH_KEY        := "$HOME/.ssh/id_ed25519"
+
+# 利用可能なコマンド一覧
+default:
+    @just --list
+
+# ----------------------------------------------------------------------------
+# SSH 鍵の準備
+# ----------------------------------------------------------------------------
+# 公開鍵が無ければ ed25519 の鍵ペアを作る (既にあれば何もしない)
+keygen:
+    if (-not (Test-Path "{{SSH_KEY}}.pub")) { \
+      ssh-keygen -t ed25519 -f "{{SSH_KEY}}" -N '""'; \
+      Write-Host "鍵を作成しました: {{SSH_KEY}}" \
+    } else { \
+      Write-Host "既存の鍵を使います: {{SSH_KEY}}.pub" \
+    }
+
+# ----------------------------------------------------------------------------
+# デプロイ / 破棄
+# ----------------------------------------------------------------------------
+# リソースグループ作成 + Bicep デプロイ (手元の公開鍵を渡す)
+deploy: keygen
+    az group create --name {{RESOURCE_GROUP}} --location {{LOCATION}}
+    $key = Get-Content "{{SSH_KEY}}.pub" -Raw; \
+    az deployment group create \
+      --resource-group {{RESOURCE_GROUP}} \
+      --template-file main.bicep \
+      --parameters adminPublicKey="$key"
+
+# リソースグループごと削除 (使い終わったら必ず実行)
+destroy:
+    az group delete --name {{RESOURCE_GROUP}} --yes --no-wait
+
+# ----------------------------------------------------------------------------
+# 接続 / 現在の Public IP
+# ----------------------------------------------------------------------------
+# 現在の Public IP を表示 (Dynamic の場合 deallocate 中は null)
+show-ip:
+    az network public-ip show --resource-group {{RESOURCE_GROUP}} --name {{PIP_NAME}} --query ipAddress -o tsv
+
+# SSH 鍵で VM にログイン
+ssh:
+    $IP = az network public-ip show --resource-group {{RESOURCE_GROUP}} --name {{PIP_NAME}} --query ipAddress -o tsv; \
+    Write-Host "ssh {{ADMIN_USER}}@$IP"; \
+    ssh -i "{{SSH_KEY}}" "{{ADMIN_USER}}@$IP"
+
+# ----------------------------------------------------------------------------
+# 実験1: NSG の SSH(22) ルールを出し入れして到達が変わるのを見る
+# ----------------------------------------------------------------------------
+# SSH(22) を拒否 → この後 `just ssh` は失敗するはず
+deny-ssh:
+    az network nsg rule update --resource-group {{RESOURCE_GROUP}} --nsg-name {{NSG_NAME}} --name Allow-SSH-Inbound --access Deny
+    Write-Host "SSH を Deny にしました。`just ssh` がタイムアウトすることを確認してください。"
+
+# SSH(22) を許可に戻す → 再び入れるようになる
+allow-ssh:
+    az network nsg rule update --resource-group {{RESOURCE_GROUP}} --nsg-name {{NSG_NAME}} --name Allow-SSH-Inbound --access Allow
+    Write-Host "SSH を Allow に戻しました。`just ssh` で入れることを確認してください。"
+
+# ----------------------------------------------------------------------------
+# 実験2: 80 番(HTTP)を開けて簡単な Web サーバーを立て、開閉で到達が変わるのを見る
+# ----------------------------------------------------------------------------
+# VM 内に nginx を入れて起動 (初回のみ。run-command 経由で実行)
+install-web:
+    az vm run-command invoke \
+      --resource-group {{RESOURCE_GROUP}} --name {{VM_NAME}} \
+      --command-id RunShellScript \
+      --scripts "sudo apt-get update -y && sudo apt-get install -y nginx && echo 'hello from '$(hostname) | sudo tee /var/www/html/index.html && sudo systemctl restart nginx"
+    Write-Host "nginx を入れました。`just open-http` で 80 番を開け、`just test-http` で確認してください。"
+
+# NSG に 80番(HTTP)許可ルールを追加
+open-http:
+    az network nsg rule create --resource-group {{RESOURCE_GROUP}} --nsg-name {{NSG_NAME}} \
+      --name Allow-HTTP-Inbound --priority 110 --access Allow --direction Inbound \
+      --protocol Tcp --destination-port-ranges 80 --source-address-prefixes "*"
+    Write-Host "80番を開けました。`just test-http` で応答を確認してください。"
+
+# NSG から 80番(HTTP)許可ルールを削除
+close-http:
+    az network nsg rule delete --resource-group {{RESOURCE_GROUP}} --nsg-name {{NSG_NAME}} --name Allow-HTTP-Inbound
+    Write-Host "80番を閉じました。`just test-http` がタイムアウトすることを確認してください。"
+
+# Public IP の 80番に HTTP リクエスト
+test-http:
+    $IP = az network public-ip show --resource-group {{RESOURCE_GROUP}} --name {{PIP_NAME}} --query ipAddress -o tsv; \
+    Write-Host "curl http://$IP"; \
+    curl.exe --max-time 10 "http://$IP"
+
+# ----------------------------------------------------------------------------
+# 実験3: 停止(割り当て解除)と課金 / Public IP の変化
+# ----------------------------------------------------------------------------
+# stop: OS をシャットダウンするが「割り当て」は維持 → コンピュート課金は続く
+stop:
+    az vm stop --resource-group {{RESOURCE_GROUP}} --name {{VM_NAME}}
+    Write-Host "stop しました (allocated のまま)。コンピュート課金は続きます。"
+
+# deallocate: 割り当てを解除 → コンピュート課金が止まる (Dynamic な Public IP は解放される)
+deallocate:
+    Write-Host "解放前の Public IP:"; just show-ip
+    az vm deallocate --resource-group {{RESOURCE_GROUP}} --name {{VM_NAME}}
+    Write-Host "deallocate しました。コンピュート課金は止まります。"
+
+# start: 再起動 (Dynamic な Public IP は別の値になりうる)
+start:
+    az vm start --resource-group {{RESOURCE_GROUP}} --name {{VM_NAME}}
+    Write-Host "start しました。新しい Public IP:"; just show-ip
+
+# VM の電源・割り当て状態を表示
+status:
+    az vm get-instance-view --resource-group {{RESOURCE_GROUP}} --name {{VM_NAME}} --query "instanceView.statuses[?starts_with(code, 'PowerState')].displayStatus" -o tsv

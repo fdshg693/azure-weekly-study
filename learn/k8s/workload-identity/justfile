@@ -1,0 +1,84 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+# このプロジェクトは simple で作った ACR / AKS / PostgreSQL を「流用」しつつ、
+# キーレス化 (Workload Identity による DB パスワードレス接続) を後付けする。
+# 新規 Bicep は UAMI + Federated Identity Credential のみ (main.bicep)。
+# 既存リソースへの in-place 更新 (AKS の OIDC 有効化 / PG の Entra 認証) と、
+# 因果実験のロール付け外しは az スクリプト (scripts/*.ps1) に分離している。
+#
+# 前提: 先に learn/k8s/simple を `just group-create` → `just deploy-local` 済みで、
+#       デプロイ名 main / リソースグループ rg-aks-demo の出力が読めること。
+
+ns := "workload-identity"
+
+default:
+  @just --list
+
+# === 1 回ずつのセットアップ (上から順に) ===
+
+# api/ front/ のイメージを simple の ACR にビルド。
+acr-build resource_group="rg-aks-demo":
+  @pwsh -NoProfile -File scripts/acr-build.ps1 -ResourceGroup {{resource_group}}
+
+# 既存 AKS に OIDC issuer + Workload Identity を有効化する (数分)。
+infra-prep resource_group="rg-aks-demo":
+  @pwsh -NoProfile -File scripts/infra-prep.ps1 -ResourceGroup {{resource_group}}
+
+# main.bicep をデプロイ (UAMI + Federated Identity Credential)。infra-prep の後に。
+deploy resource_group="rg-aks-demo":
+  @pwsh -NoProfile -File scripts/deploy.ps1 -ResourceGroup {{resource_group}}
+
+# 既存 PostgreSQL に Entra 認証を有効化する (1 回でよい)。
+pg-entra resource_group="rg-aks-demo":
+  @pwsh -NoProfile -File scripts/pg-entra.ps1 -ResourceGroup {{resource_group}}
+
+# AKS の接続情報を取り込む。
+credentials resource_group="rg-aks-demo":
+  @pwsh -NoProfile -File scripts/credentials.ps1 -ResourceGroup {{resource_group}}
+
+# マニフェストを適用する (ACR / PG FQDN / PG ユーザー / UAMI clientId を置換)。
+apply resource_group="rg-aks-demo":
+  @pwsh -NoProfile -File scripts/apply.ps1 -ResourceGroup {{resource_group}}
+
+# セットアップ一括: infra-prep → deploy → pg-entra → role-on → credentials → apply。
+# (acr-build は別途先に実行しておくこと)
+setup resource_group="rg-aks-demo":
+  @just infra-prep {{resource_group}}; just deploy {{resource_group}}; just pg-entra {{resource_group}}; just role-on {{resource_group}}; just credentials {{resource_group}}; just apply {{resource_group}}
+
+# === 因果を確かめる実験 (ロールの付け外し) ===
+
+# UAMI を PG の Entra 管理者にする → db.connected が true に。
+role-on resource_group="rg-aks-demo":
+  @pwsh -NoProfile -File scripts/role-on.ps1 -ResourceGroup {{resource_group}}
+
+# UAMI を PG の Entra 管理者から外す → db.connected が false に。
+role-off resource_group="rg-aks-demo":
+  @pwsh -NoProfile -File scripts/role-off.ps1 -ResourceGroup {{resource_group}}
+
+# === 確認 ===
+
+# Pod / Service / Ingress / SA の状態をまとめて表示する。
+status:
+  @kubectl get pods,svc,ingress,serviceaccount -n {{ns}}
+
+# Ingress に払い出された外部 IP を表示する。
+ingress-ip:
+  @kubectl get ingress app -n {{ns}} -o "jsonpath={.status.loadBalancer.ingress[0].ip}"
+
+# API の応答を直接見る (db.connected / login_user / has_pgpassword_env を確認)。
+curl-api:
+  @kubectl run -n {{ns}} curltmp --image=curlimages/curl --restart=Never --rm -i -- -s http://api/api
+
+# API Pod のログを追う (トークン取得や接続エラーの確認に)。
+logs:
+  @kubectl logs -n {{ns}} -l app=api --tail=50 -f
+
+# Workload Identity が注入した env を Pod 内で確認する (PGPASSWORD が無いことを見る)。
+show-env:
+  @kubectl exec -n {{ns}} deploy/api -- env | Select-String "AZURE_|PG"
+
+# === 後片付け ===
+
+# 名前空間 + UAMI + PG 管理者登録を削除する (simple のクラスタ/インフラは残す)。
+destroy resource_group="rg-aks-demo":
+  @pwsh -NoProfile -File scripts/destroy.ps1 -ResourceGroup {{resource_group}}

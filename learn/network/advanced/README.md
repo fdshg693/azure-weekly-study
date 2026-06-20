@@ -44,6 +44,7 @@
 | --- | --- | --- | --- |
 | [`step1`](./step1/README.md) | 案4 | L7 を「守る」 ― WAF と TLS 終端（App Gateway / リージョン内） | WAF mode（Detection⇄Prevention） |
 | [`step2`](./step2/README.md) | 案5 | 可用性とエッジ防御 ― Front Door / DDoS（グローバル・エッジ） | WAF mode ＋ オリジンの lock/unlock |
+| [`step3`](./step3/README.md) | 案1 | 拠点間をつなぐ ― VPN Gateway / IPsec / BGP（ハイブリッド接続） | トンネル up/down ＋ プレフィックス追加（BGP 自動伝播） |
 
 ## 学び方の特徴（basic と共通）
 

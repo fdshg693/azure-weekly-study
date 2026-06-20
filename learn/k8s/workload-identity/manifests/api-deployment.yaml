@@ -1,0 +1,56 @@
+# API の Deployment。このプロジェクトの主役は「パスワードを持たないこと」。
+# __ACR_LOGIN_SERVER__ / __PG_FQDN__ / __PG_USER__ は apply スクリプトが
+# Bicep 出力・simple のデプロイ出力で置換してから kubectl へ流す。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: workload-identity
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+        # このラベルが付いた Pod にだけ Workload Identity の webhook が
+        # トークン用の env とボリュームを注入する (これが無いと素の Pod のまま)。
+        azure.workload.identity/use: "true"
+    spec:
+      # ↑ の SA を使うことで「なりすます Managed Identity」が決まる。
+      serviceAccountName: pg-accessor
+      containers:
+        - name: api
+          image: __ACR_LOGIN_SERVER__/wi/api:v1
+          ports:
+            - containerPort: 8080
+          # env はすべて非機密 (接続先と「誰として入るか」だけ)。PGPASSWORD は無い。
+          env:
+            - name: PGHOST
+              value: __PG_FQDN__
+            - name: PGUSER          # = UAMI 名。PG の Entra ログイン名になる
+              value: __PG_USER__
+            - name: PGDATABASE
+              value: postgres
+            - name: PGSSLMODE
+              value: require
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"

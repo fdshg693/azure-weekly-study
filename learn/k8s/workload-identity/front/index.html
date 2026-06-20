@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>workload-identity front</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 46rem; margin: 3rem auto; padding: 0 1rem; }
+      pre { background: #f4f4f4; padding: 1rem; border-radius: 8px; overflow-x: auto; }
+      button { padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer; }
+      .badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 999px; color: #fff; font-weight: 600; }
+      .ok { background: #0b5; }
+      .ng { background: #c33; }
+      .row { margin: 0.4rem 0; }
+      label { user-select: none; }
+    </style>
+  </head>
+  <body>
+    <h1>🔑 workload-identity — front</h1>
+    <p>
+      パスワードを一切持たず、Pod の Microsoft Entra トークンで PostgreSQL に接続する様子を観察するページ。
+      <code>/api</code> の <strong>db.connected</strong> を見る。
+      <code>just role-off</code> で DB のロールを外すと <span class="badge ng">false</span> に、
+      <code>just role-on</code> で付け直すと <span class="badge ok">true</span> に変わる。
+    </p>
+
+    <div class="row">DB 接続: <span id="conn" class="badge ng">?</span></div>
+    <div class="row">ログインユーザー (DB 側 current_user): <strong id="user">?</strong></div>
+    <div class="row">PGPASSWORD env を持っているか (期待値 false = キーレス): <strong id="pw">?</strong></div>
+
+    <p>
+      <button onclick="callApi()">GET /api (1 回)</button>
+      <label><input type="checkbox" id="poll" onchange="togglePoll()" /> 2 秒ごとに自動更新 (ロール付替の観察用)</label>
+    </p>
+    <pre id="out">(まだ呼んでいません)</pre>
+
+    <script>
+      let timer = null;
+      async function callApi() {
+        const out = document.getElementById("out");
+        try {
+          const res = await fetch("/api");
+          const json = await res.json();
+          out.textContent = JSON.stringify(json, null, 2);
+          const connected = json.db && json.db.connected;
+          const conn = document.getElementById("conn");
+          conn.textContent = connected ? "true" : "false";
+          conn.className = "badge " + (connected ? "ok" : "ng");
+          document.getElementById("user").textContent = (json.db && json.db.login_user) ?? "-";
+          document.getElementById("pw").textContent = String(json.has_pgpassword_env);
+        } catch (e) {
+          out.textContent = "error: " + e;
+        }
+      }
+      function togglePoll() {
+        const on = document.getElementById("poll").checked;
+        if (on) { timer = setInterval(callApi, 2000); callApi(); }
+        else { clearInterval(timer); timer = null; }
+      }
+    </script>
+  </body>
+</html>

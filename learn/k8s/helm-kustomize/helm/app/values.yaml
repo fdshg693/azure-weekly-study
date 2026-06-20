@@ -1,0 +1,40 @@
+# チャートの既定値。values-dev.yaml / values-prod.yaml が必要な箇所だけ上書きする。
+# Kustomize の「ベース」に相当する役割 (= 共通の土台)。
+
+# 設定 (ConfigMap に入る非機密値)。
+env: base
+message: "base 既定メッセージ (values で上書き)"
+
+# イメージの出どころ。registry は環境非依存だが値はデプロイ時まで分からないので、
+# `helm upgrade --install ... --set image.registry=<ACR>` で注入する。
+# → Kustomize の images transformer に対応する、Helm 側の「実イメージ差し込み」。
+image:
+  registry: PLACEHOLDER_ACR     # 例: myacr.azurecr.io。--set で上書きする
+  apiRepository: hk/api
+  frontRepository: hk/front
+  tag: v1
+  pullPolicy: IfNotPresent
+
+# API の台数とリソース。prod の values でまとめて増やす。
+api:
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 250m, memory: 128Mi }
+
+front:
+  replicas: 1
+  resources:
+    requests: { cpu: 25m, memory: 32Mi }
+    limits: { cpu: 100m, memory: 64Mi }
+
+# HPA は既定 off。prod の values で on にする (Kustomize の prod だけ hpa.yaml を足すのに対応)。
+hpa:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 50
+
+# Ingress の host。dev/prod で分けて衝突を避ける。
+ingress:
+  host: app.local

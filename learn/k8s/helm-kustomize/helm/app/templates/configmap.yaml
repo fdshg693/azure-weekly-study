@@ -1,0 +1,10 @@
+# 非機密の設定。値は values の env / message から差し込む。
+# Kustomize の base/configmap.yaml + overlay の config-patch に対応する部分を、
+# Helm では「テンプレート + values」の 1 ファイルで表現する。
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  APP_ENV: {{ .Values.env | quote }}
+  APP_MESSAGE: {{ .Values.message | quote }}

@@ -1,0 +1,13 @@
+{
+  "name": "client-credentials-daemon-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "自前 API（リソースサーバー）— client credentials のトークンを受け、scp ではなく roles（アプリケーション許可）を検証する最小実装",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "jose": "^5.9.6"
+  }
+}

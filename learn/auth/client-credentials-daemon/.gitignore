@@ -1,0 +1,6 @@
+# 実際の設定値（.env.example を雛形にユーザーが作成）。★ CLIENT_SECRET を含むので絶対にコミットしない。
+.env
+
+# 各プロセスの依存（task api / task run で npm install される）
+api/node_modules
+daemon/node_modules

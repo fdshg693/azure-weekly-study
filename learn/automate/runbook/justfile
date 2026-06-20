@@ -1,0 +1,103 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+# 既定リソースグループ・リージョン・対象 VM 名
+rg := "rg-automate-runbook"
+loc := "japaneast"
+vm := "vm-rbtarget"
+apiver := "2023-11-01"
+
+default:
+  @just --list
+
+# リソースグループを作成する。
+group-create:
+  @az group create --name {{rg}} --location {{loc}}
+
+# Bicep をデプロイ (Automation Account / MI+ロール / 変数 / 空の Runbook)。スケジュールは含めない。
+deploy:
+  @az deployment group create --resource-group {{rg}} --template-file main.bicep --parameters main.bicepparam
+
+# Runbook の本文をアップロードして発行する (simple の az acr build に相当)。
+upload:
+  @$d = az deployment group show -g {{rg}} -n main | ConvertFrom-Json; $acct = $d.properties.outputs.automationAccountName.value; $rb = $d.properties.outputs.runbookName.value; az automation runbook replace-content -g {{rg}} --automation-account-name $acct -n $rb --content '@runbooks/Manage-VMPower.ps1'; az automation runbook publish -g {{rg}} --automation-account-name $acct -n $rb
+
+# deploy → upload を一括実行する。
+up:
+  @just deploy; just upload
+
+# デプロイ出力 (アカウント名 / Runbook 名 / principalId / 対象 VM) を表示する。
+outputs:
+  @$d = az deployment group show -g {{rg}} -n main | ConvertFrom-Json; $o = $d.properties.outputs; [pscustomobject]@{ account = $o.automationAccountName.value; runbook = $o.runbookName.value; principalId = $o.principalId.value; targetVM = $o.targetVMName.value } | Format-List
+
+# 操作対象の VM を作成する (B1s / Public IP 無し / NSG ルール無し)。start/stop の的になるだけ。
+vm-create:
+  @az vm create -g {{rg}} -n {{vm}} --image Ubuntu2204 --size Standard_B1s --generate-ssh-keys --public-ip-address "" --nsg-rule NONE -o table
+
+# 対象 VM の電源状態を表示する (runbook の操作前後で変化を確認)。
+vm-state:
+  @az vm get-instance-view -g {{rg}} -n {{vm}} --query "instanceView.statuses[?starts_with(code,'PowerState/')].displayStatus" -o tsv
+
+# runbook を手動起動して VM を起動する。ジョブ名を表示する。
+start-vm:
+  @just _run Action=Start
+
+# runbook を手動起動して VM を停止 (deallocate) する。
+stop-vm:
+  @just _run Action=Stop
+
+# 操作はせず電源状態の読み取りだけ行う (Reader 権限だけで通ることの確認用)。
+status-run:
+  @just _run Action=Status
+
+# わざと失敗させる (Stop しつつ最後に例外 → Failed + エラーストリーム)。
+fail-demo:
+  @just _run "Action=Stop FailJob=true"
+
+# 内部: runbook を起動する共通処理。引数はスペース区切りの KEY=VALUE 群。
+_run params:
+  @$d = az deployment group show -g {{rg}} -n main | ConvertFrom-Json; $acct = $d.properties.outputs.automationAccountName.value; $rb = $d.properties.outputs.runbookName.value; $p = "{{params}}".Split(" "); $job = az automation runbook start -g {{rg}} --automation-account-name $acct -n $rb --parameters $p --query name -o tsv; Write-Host "started job: $job  (just status $job / just job-output $job)"
+
+# ジョブ一覧 (新しい順に Status を確認)。
+jobs:
+  @$d = az deployment group show -g {{rg}} -n main | ConvertFrom-Json; $acct = $d.properties.outputs.automationAccountName.value; az automation job list -g {{rg}} --automation-account-name $acct -o table
+
+# 指定ジョブの詳細 (Status / 例外など) を表示する。
+status job:
+  @$d = az deployment group show -g {{rg}} -n main | ConvertFrom-Json; $acct = $d.properties.outputs.automationAccountName.value; az automation job show -g {{rg}} --automation-account-name $acct -n {{job}} -o jsonc
+
+# 指定ジョブの Output ストリーム (runbook の Write-Output) をテキストで表示する。
+job-output job:
+  @$d = az deployment group show -g {{rg}} -n main | ConvertFrom-Json; $id = $d.properties.outputs.automationAccountId.value; az rest --method get --url "https://management.azure.com$id/jobs/{{job}}/output?api-version={{apiver}}" --headers "Accept=text/plain"
+
+# --- 因果実験: 認可(RBAC) -------------------------------------------------
+# MI から Virtual Machine Contributor を外す。この後 stop-vm すると 403(認可なし)になる。
+revoke-vmcontrib:
+  @$d = az deployment group show -g {{rg}} -n main | ConvertFrom-Json; $pid = $d.properties.outputs.principalId.value; az role assignment delete --assignee $pid --role "Virtual Machine Contributor" --resource-group {{rg}}
+
+# MI に Virtual Machine Contributor を付け直す。再び start/stop できるようになる。
+grant-vmcontrib:
+  @$d = az deployment group show -g {{rg}} -n main | ConvertFrom-Json; $pid = $d.properties.outputs.principalId.value; az role assignment create --assignee-object-id $pid --assignee-principal-type ServicePrincipal --role "Virtual Machine Contributor" --resource-group {{rg}}
+
+# --- 因果実験: 共有アセット(Automation 変数) ------------------------------
+# 全変数の名前と値を表示する。
+show-vars:
+  @$d = az deployment group show -g {{rg}} -n main | ConvertFrom-Json; $id = $d.properties.outputs.automationAccountId.value; az rest --method get --url "https://management.azure.com$id/variables?api-version={{apiver}}" --query "value[].{name:name, value:properties.value}" -o table
+
+# 変数を書き換える。例: just set-var DefaultAction Start  /  just set-var TargetVMName vm-other
+set-var name value:
+  @$d = az deployment group show -g {{rg}} -n main | ConvertFrom-Json; $id = $d.properties.outputs.automationAccountId.value; $b = @{ properties = @{ value = '"{{value}}"' } } | ConvertTo-Json -Compress; az rest --method patch --url "https://management.azure.com$id/variables/{{name}}?api-version={{apiver}}" --body $b
+
+# --- 任意: スケジュール ---------------------------------------------------
+# スケジュール + jobSchedule を一度だけ作る (deploySchedule=true)。
+# Automation のスケジュールはほぼ変更不可なので、通常の deploy には含めない。
+schedule:
+  @az deployment group create -g {{rg}} -n main --template-file main.bicep --parameters main.bicepparam deploySchedule=true
+
+# タイムゾーンを変えて作り直す。既存の jobSchedule / schedule を消してから再作成する。
+# 例: just set-tz "Pacific Standard Time"  /  just set-tz "Etc/UTC"
+set-tz tz:
+  @$d = az deployment group show -g {{rg}} -n main | ConvertFrom-Json; $id = $d.properties.outputs.automationAccountId.value; $js = az rest --method get --url "https://management.azure.com$id/jobSchedules?api-version={{apiver}}" | ConvertFrom-Json; foreach ($j in $js.value) { az rest --method delete --url "https://management.azure.com$($j.id)?api-version={{apiver}}" }; az rest --method delete --url "https://management.azure.com$id/schedules/sched-nightly-stop?api-version={{apiver}}"; az deployment group create -g {{rg}} -n main --template-file main.bicep --parameters main.bicepparam deploySchedule=true scheduleTimeZone='{{tz}}'
+
+# リソースグループごと削除する (Automation Account も VM もまとめて消える)。
+destroy:
+  @az group delete --name {{rg}} --yes --no-wait

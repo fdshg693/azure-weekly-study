@@ -1,0 +1,41 @@
+# 負荷を掛けられる API の Deployment。監視グラフを動かす「観察対象」。
+# image の __ACR_LOGIN_SERVER__ は justfile の `apply` レシピが Bicep 出力の
+# acrLoginServer に置換してから kubectl へ流す (simple / config-rollout と同じ仕組み)。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: observability
+spec:
+  replicas: 2                          # HPA の minReplicas と揃える
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+        - name: api
+          image: __ACR_LOGIN_SERVER__/observ/api:v1
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 5
+          livenessProbe:               # /crash で落ちたらここが失敗し、kubelet が再起動する
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:                  # HPA の「分母」。averageUtilization=50% はこの cpu に対する割合
+              cpu: "100m"
+              memory: "128Mi"
+            limits:                    # CPU の使いすぎへの歯止め (グラフの上限としても見える)
+              cpu: "500m"
+              memory: "256Mi"

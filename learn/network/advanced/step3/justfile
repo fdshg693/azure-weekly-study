@@ -1,0 +1,112 @@
+RESOURCE_GROUP := "rg-azure-vpn-learn"
+LOCATION := "japaneast"
+HUB_GW := "vng-hub"
+ONPREM_GW := "vng-onprem"
+HUB_VM := "vm-hub"
+ONPREM_VM := "vm-onprem"
+HUB_VM_IP := "10.0.1.4"
+ONPREM_VM_IP := "10.50.1.4"
+# IPsec トンネルの事前共有鍵(PSK)。両方向の接続で同じ値を使う（tunnel-up での再作成にも使用）
+PSK := "azure-learn-s2s-psk-2026"
+
+# 既定のタスク。利用可能なコマンド一覧を表示する
+default:
+    @just --list
+
+# Bicep テンプレートをデプロイする
+# 注意: VPN Gateway を 2 台作るため 30〜45 分かかる。コーヒーでも飲んで待つこと。
+deploy:
+    @echo "Creating Resource Group: {{RESOURCE_GROUP}} in {{LOCATION}}..."
+    az group create --name {{RESOURCE_GROUP}} --location {{LOCATION}} -o none
+    @echo "Deploying Bicep template... (VPN Gateway 2 台のプロビジョニングに 30〜45 分かかります)"
+    az deployment group create \
+      --resource-group {{RESOURCE_GROUP}} \
+      --name main \
+      --template-file main.bicep \
+      --parameters sharedKey={{PSK}} \
+      -o none
+    @echo "Deployment completed."
+    @just info
+
+# 構成情報（Gateway 名・ASN・VM private IP・接続状態）を表示する
+info:
+    @echo "Resource Group : {{RESOURCE_GROUP}}"
+    @echo "Hub    : gateway={{HUB_GW}}    vm={{HUB_VM}} ({{HUB_VM_IP}})"
+    @echo "Onprem : gateway={{ONPREM_GW}} vm={{ONPREM_VM}} ({{ONPREM_VM_IP}})"
+    @echo "--- VNet-to-VNet 接続の状態 ---"
+    @az network vpn-connection show -g {{RESOURCE_GROUP}} -n conn-hub-to-onprem \
+      --query "{name:name, status:connectionStatus, bgp:enableBgp, ingressBytes:ingressBytesTransferred, egressBytes:egressBytesTransferred}" -o table 2>/dev/null || echo "(conn-hub-to-onprem なし)"
+
+# トンネル越しの疎通確認: hub VM の "内側" から onprem VM(private IP) へ curl する
+# run-command を使うので公開 IP も SSH も不要。トンネルが上がり経路が伝播していれば 200 が返る。
+test:
+    @echo "From {{HUB_VM}} -> curl http://{{ONPREM_VM_IP}}/ (トンネル越し)"
+    @az vm run-command invoke -g {{RESOURCE_GROUP}} -n {{HUB_VM}} \
+      --command-id RunShellScript \
+      --scripts "curl -s -m 8 http://{{ONPREM_VM_IP}}/ || echo '=== TIMEOUT/UNREACHABLE (到達できない) ==='" \
+      --query "value[0].message" -o tsv
+
+# 逆方向の疎通確認: onprem VM から hub VM へ curl する
+test-reverse:
+    @echo "From {{ONPREM_VM}} -> curl http://{{HUB_VM_IP}}/ (トンネル越し)"
+    @az vm run-command invoke -g {{RESOURCE_GROUP}} -n {{ONPREM_VM}} \
+      --command-id RunShellScript \
+      --scripts "curl -s -m 8 http://{{HUB_VM_IP}}/ || echo '=== TIMEOUT/UNREACHABLE (到達できない) ==='" \
+      --query "value[0].message" -o tsv
+
+# BGP ピアセッションの状態を見る（hub ゲートウェイ視点）
+# state=Connected で対向 ASN とセッションが張れている。routesReceived が学習経路数。
+bgp-status:
+    @echo "--- BGP peer status on {{HUB_GW}} ---"
+    az network vnet-gateway list-bgp-peer-status -g {{RESOURCE_GROUP}} -n {{HUB_GW}} \
+      --query "value[].{neighbor:neighbor, asn:asn, state:state, routesReceived:routesReceived, connectedDuration:connectedDuration}" -o table
+
+# BGP で "学習した" 経路を見る（hub ゲートウェイ視点）
+# origin=EBgp / nextHop=対向の BGP ピア IP で onprem 側のプレフィックスが出れば、
+# 経路は手書き(UDR)ではなく BGP で自動伝播してきた証拠（basic/step3 の静的 UDR との対比）。
+learned-routes:
+    @echo "--- learned routes on {{HUB_GW}} (BGP で伝播してきた経路) ---"
+    az network vnet-gateway list-learned-routes -g {{RESOURCE_GROUP}} -n {{HUB_GW}} \
+      --query "value[].{network:network, origin:origin, nextHop:nextHop, asPath:asPath, weight:weight}" -o table
+
+# 【出し入れ①】トンネルを落とす: 双方向の接続を削除する
+# → test が TIMEOUT になり、learned-routes から onprem の経路が消えることを観測する
+tunnel-down:
+    @echo "Deleting both VNet-to-VNet connections (トンネルを落とす)..."
+    az network vpn-connection delete -g {{RESOURCE_GROUP}} -n conn-hub-to-onprem -o none
+    az network vpn-connection delete -g {{RESOURCE_GROUP}} -n conn-onprem-to-hub -o none
+    @echo "tunnel DOWN. 数十秒後に 'just test' / 'just learned-routes' で到達不可・経路消失を確認。"
+
+# 【出し入れ①】トンネルを上げ直す: 接続を双方向に再作成する（BGP 有効・同じ PSK）
+# → 1〜2 分でセッションが再確立し、test が再び 200、learned-routes に経路が復活する
+tunnel-up:
+    @echo "Recreating both VNet-to-VNet connections (トンネルを上げる)..."
+    az network vpn-connection create -g {{RESOURCE_GROUP}} -l {{LOCATION}} \
+      -n conn-hub-to-onprem --vnet-gateway1 {{HUB_GW}} --vnet-gateway2 {{ONPREM_GW}} \
+      --shared-key {{PSK}} --enable-bgp true -o none
+    az network vpn-connection create -g {{RESOURCE_GROUP}} -l {{LOCATION}} \
+      -n conn-onprem-to-hub --vnet-gateway1 {{ONPREM_GW}} --vnet-gateway2 {{HUB_GW}} \
+      --shared-key {{PSK}} --enable-bgp true -o none
+    @echo "tunnel UP. 1〜2 分でセッション再確立。'just bgp-status' が Connected になるのを待って 'just test'。"
+
+# 【出し入れ②】BGP の真価: onprem VNet に新しいアドレス空間 10.60.0.0/16 を足す
+# → 何も手で経路を書かなくても、BGP が hub 側へ自動広告する。
+#   直後に 'just learned-routes' を実行すると 10.60.0.0/16 が EBgp で現れる（静的 UDR なら手作業が必要）。
+add-prefix:
+    @echo "Adding 10.60.0.0/16 to vnet-onprem (BGP が自動広告するか観測)..."
+    az network vnet update -g {{RESOURCE_GROUP}} -n vnet-onprem \
+      --address-prefixes 10.50.0.0/16 10.60.0.0/16 -o none
+    @echo "Done. 1〜2 分待って 'just learned-routes' で 10.60.0.0/16 が現れるか確認。"
+
+# 【出し入れ②】追加したアドレス空間を元に戻す
+del-prefix:
+    @echo "Removing 10.60.0.0/16 from vnet-onprem..."
+    az network vnet update -g {{RESOURCE_GROUP}} -n vnet-onprem \
+      --address-prefixes 10.50.0.0/16 -o none
+    @echo "Done. 'just learned-routes' から 10.60.0.0/16 が消えるのを確認。"
+
+# リソースグループを削除し、環境をクリーンアップする（課金が高いので検証後は必ず実行）
+cleanup:
+    @echo "Deleting Resource Group: {{RESOURCE_GROUP}}..."
+    az group delete --name {{RESOURCE_GROUP}} --yes --no-wait
+    @echo "Cleanup initiated. (VPN Gateway は時間課金なので削除完了まで見届けること)"

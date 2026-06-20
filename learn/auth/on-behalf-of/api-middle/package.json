@@ -1,0 +1,13 @@
+{
+  "name": "on-behalf-of-api-middle",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "中間 API(A)（リソースサーバー兼コンフィデンシャルクライアント）— ユーザートークンを検証し、On-Behalf-Of 交換で下流 API(B) をユーザーとして呼ぶ",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "jose": "^5.9.6"
+  }
+}

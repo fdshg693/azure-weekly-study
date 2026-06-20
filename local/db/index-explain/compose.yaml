@@ -1,0 +1,24 @@
+# 案1（インデックスと実行計画）用の PostgreSQL 単体コンテナ。
+# 接続情報・ポートは .env から読む（.env.example を参照）。
+services:
+  db:
+    image: postgres:17
+    container_name: db-index-explain
+    # POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB を渡す。
+    env_file: .env
+    ports:
+      # ホスト側ポートだけ .env で差し替え可能（コンテナ内は常に 5432）。
+      - "${HOST_PORT:-5432}:5432"
+    volumes:
+      # データは named volume に置く（コンテナを作り直しても残る）。
+      - pgdata:/var/lib/postgresql/data
+    # 数百万行のソート/並列スキャンで共有メモリ不足を避ける。
+    shm_size: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pgdata:

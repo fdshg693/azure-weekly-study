@@ -1,0 +1,10 @@
+# 非機密の設定置き場。env (環境名) と message を持つ。
+# ベースの値は「上書きされる前提のプレースホルダ」。各 overlay の
+# config-patch.yaml が dev / prod の実値にマージ上書きする。
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  APP_ENV: "base"
+  APP_MESSAGE: "base 既定メッセージ (overlay で上書きされる)"

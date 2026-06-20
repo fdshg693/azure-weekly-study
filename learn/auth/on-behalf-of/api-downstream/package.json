@@ -1,0 +1,13 @@
+{
+  "name": "on-behalf-of-api-downstream",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "下流 API(B)（リソースサーバー）— OBO 交換後の aud=api://B トークンだけを受け入れ、伝播してきたユーザーの身元を応答に返す",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "jose": "^5.9.6"
+  }
+}

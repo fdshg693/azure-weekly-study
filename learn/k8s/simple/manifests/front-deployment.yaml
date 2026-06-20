@@ -1,5 +1,4 @@
 # フロントの Deployment。API とまったく同じ骨格で、image / name / port が違うだけ。
-# (記事では差分のみ抜粋だったが、ここでは適用できる完全版にしている)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
