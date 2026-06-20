@@ -29,6 +29,11 @@ local.tfvars
 __pycache__/
 .venv/
 
+# ======= Node.js ======= 
+
+node_modules/
+dist/
+
 # ======= Terraform ======= 
 
 # Local .terraform directories

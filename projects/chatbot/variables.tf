@@ -8,7 +8,7 @@
 variable "resource_group_name" {
   description = "リソースグループの名前"
   type        = string
-  default     = "rg-app-service-dev"
+  default     = "rg-chatbot-dev-seiwan"
 }
 
 variable "location" {
@@ -29,7 +29,7 @@ variable "app_service_plan_name" {
       - 1-60文字の長さ制限
   EOT
   type        = string
-  default     = "asp-chatbot-dev"
+  default     = "asp-chatbot-dev-seiwan"
 
   validation {
     condition     = can(regex("^[a-zA-Z0-9-]{1,60}$", var.app_service_plan_name))
@@ -48,7 +48,7 @@ variable "app_service_plan_sku" {
     F1 で動作しない場合は B1 以上を推奨。
   EOT
   type        = string
-  default     = "S1"
+  default     = "F1"
 
   validation {
     condition     = contains(["F1", "B1", "S1", "P1v2", "P1v3"], var.app_service_plan_sku)

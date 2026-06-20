@@ -1,10 +1,11 @@
 set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
 
 # Terraform variables.tf のデフォルト値と合わせる
-resource_group := "rg-app-service-dev"
+resource_group := "rg-chatbot-dev-seiwan"
 web_app_name   := "webapp-chatbot-dev-seiwan"
 app_dir        := "app"
 zip_path       := "app.zip"
+entra_app_name := "chatbot-graph-demo"
 
 default:
   @just --list
@@ -47,6 +48,24 @@ deploy: package
 
 # インフラ作成 → アプリデプロイをまとめて実行
 up: apply deploy
+
+# ----------------------------------------------------------------------------
+# Entra ID 認証（App Registration）
+# ----------------------------------------------------------------------------
+# az コマンドは長くなりがちなので justfile に直書きせず、必ず scripts/ 配下の
+# PowerShell スクリプトを呼び出す方針にしている。
+
+# App Registration を作成/更新し、auth.auto.tfvars に値を書き出す（手動設定の自動化）
+auth-setup:
+  @pwsh -NoProfile -File scripts/setup-entra-app.ps1 -WebAppName "{{web_app_name}}" -DisplayName "{{entra_app_name}}"
+
+# 現在の App Registration の状態・許可済スコープを確認（読み取り専用）
+auth-show:
+  @pwsh -NoProfile -File scripts/show-entra-app.ps1 -DisplayName "{{entra_app_name}}"
+
+# App Registration と auth.auto.tfvars を削除（後片付け）
+auth-destroy:
+  @pwsh -NoProfile -File scripts/destroy-entra-app.ps1 -DisplayName "{{entra_app_name}}"
 
 # ----------------------------------------------------------------------------
 # ローカル開発

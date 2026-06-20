@@ -1,3 +1,10 @@
+// ローカル開発用に app/.env から環境変数を読み込む（最優先で実行）。
+// auth.js / auth_obo.js は require された時点で process.env を読むため、
+// それらを require する前に必ず dotenv を評価しておく必要がある。
+// __dirname 固定なので、どのディレクトリから起動しても app/.env を参照する。
+// 既存の環境変数は上書きしないため、App Service 上（.env 不在）では何もしない。
+require("dotenv").config({ path: require("path").join(__dirname, ".env") });
+
 const express = require("express");
 const session = require("express-session");
 const { AzureOpenAI } = require("openai");
