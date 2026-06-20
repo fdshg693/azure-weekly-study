@@ -1,0 +1,8 @@
+# ローカル設定（RG/LOCATION/PREFIX の差し替え用）。秘密は無いが個人設定なのでコミットしない。
+.env
+
+# Bicep をローカルでビルド/lint したときの中間生成物
+main.json
+
+# acrpull-demo が作るテスト用 SP の資格情報（★秘密を含む。cleanup で削除されるが念のため無視）
+.acrpull-demo.json

@@ -1,0 +1,92 @@
+# Taskfile (https://taskfile.dev)。container トピック Step 2「aci」。
+# PowerShell の実体は scripts/*.ps1 に切り出し、ここからは呼び出すだけにしてある
+# (registry Step 1 と同じ方針)。
+#
+# 主役は Azure Container Instances (ACI)。「1 コンテナを Azure に最短で載せる」。
+# Step 1 (registry) の ACR / 消費者 UAMI / イメージをそのまま参照して keyless pull する。
+# RG / LOCATION / PREFIX / REGISTRY_RG / REPO / TAG は .env で差し替え可 (無ければ scripts の既定値)。
+version: '3'
+
+vars:
+  RG: '{{.RG | default "rg-container-aci"}}'
+  LOC: '{{.LOC | default "japaneast"}}'
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  group-create:
+    desc: リソースグループを作成する
+    cmds:
+      - az group create --name {{.RG}} --location {{.LOC}}
+
+  deploy:
+    desc: 'web の Container Group をデプロイ (registry の ACR/UAMI を参照し keyless pull)。例: task deploy POLICY=OnFailure'
+    cmds:
+      - pwsh -NoProfile -File scripts/deploy.ps1 -Policy {{.POLICY | default "Always"}}
+
+  up:
+    desc: group-create → deploy を一括実行する
+    cmds:
+      - task: group-create
+      - task: deploy
+
+  outputs:
+    desc: デプロイ出力 (FQDN / IP / URL / Container Group 名) を表示する
+    cmds:
+      - pwsh -NoProfile -File scripts/outputs.ps1
+
+  # --- 到達・状態を見る ---------------------------------------------------------
+  probe:
+    desc: web の FQDN に HTTP で当てて、ACR から pull したページが出るか確認する
+    cmds:
+      - pwsh -NoProfile -File scripts/probe.ps1
+
+  show:
+    desc: '状態・restartCount・pull/起動イベントを表示。例: task show CG=cg-aci-restart'
+    cmds:
+      - pwsh -NoProfile -File scripts/show.ps1 -Cg {{.CG | default ""}}
+
+  logs:
+    desc: 'コンテナのログを表示。例: task logs CG=cg-aci-sidecar CONTAINER=sidecar'
+    cmds:
+      - pwsh -NoProfile -File scripts/logs.ps1 -Cg {{.CG | default ""}} -Container {{.CONTAINER | default ""}}
+
+  # --- 因果を確かめる実験 -------------------------------------------------------
+  restart-demo:
+    desc: 'restartPolicy の差を観察。例: task restart-demo POLICY=OnFailure EXIT=1 (POLICY=Always/OnFailure/Never)'
+    cmds:
+      - pwsh -NoProfile -File scripts/restart-demo.ps1 -Policy {{.POLICY | default "OnFailure"}} -ExitCode {{.EXIT | default "1"}}
+
+  sidecar:
+    desc: コンテナグループ (web + sidecar 同居) をデプロイし、localhost 共有を観察する
+    cmds:
+      - pwsh -NoProfile -File scripts/sidecar.ps1
+
+  acrpull-off:
+    desc: 消費者 UAMI の AcrPull を剥奪する (この後 recreate すると pull が 403 で失敗)
+    cmds:
+      - pwsh -NoProfile -File scripts/acrpull.ps1 -Action off
+
+  acrpull-on:
+    desc: 消費者 UAMI に AcrPull を付与し直す (registry の既定状態に戻す)
+    cmds:
+      - pwsh -NoProfile -File scripts/acrpull.ps1 -Action on
+
+  recreate:
+    desc: 'web を作り直して再 pull させる (AcrPull 出し入れの効果を見るのに使う)。例: task recreate POLICY=Always'
+    cmds:
+      - pwsh -NoProfile -File scripts/recreate.ps1 -Policy {{.POLICY | default "Always"}}
+
+  # --- 後始末 (コスト注意) ------------------------------------------------------
+  delete:
+    desc: '特定の Container Group だけ削除し課金を止める。例: task delete CG=cg-aci-restart'
+    cmds:
+      - pwsh -NoProfile -File scripts/delete.ps1 -Cg {{.CG | default ""}}
+
+  destroy:
+    desc: リソースグループごと削除する (registry の RG は消さない)
+    cmds:
+      - az group delete --name {{.RG}} --yes --no-wait

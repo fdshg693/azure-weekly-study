@@ -1,0 +1,112 @@
+# Taskfile（https://taskfile.dev）。container トピック Step 1「registry」。
+# PowerShell の実体は scripts/*.ps1 に切り出し、ここからは呼び出すだけにしてある
+# （巨大ワンライナーを避け、各操作を素直な .ps1 として読めるようにする。sibling と同じ方針）。
+#
+# 主役は Azure Container Registry (ACR)。後続ステップ (aci / webapp / container-apps) は
+# ここに上げたイメージを pull する前提なので、最初に固める。
+# RG / LOCATION / PREFIX は .env で差し替え可（無ければ scripts 内の既定値）。
+version: '3'
+
+vars:
+  RG: '{{.RG | default "rg-container-registry"}}'
+  LOC: '{{.LOC | default "japaneast"}}'
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  group-create:
+    desc: リソースグループを作成する
+    cmds:
+      - az group create --name {{.RG}} --location {{.LOC}}
+
+  deploy:
+    desc: Bicep をデプロイする（ACR + 消費者 UAMI + AcrPull、admin user は既定で無効＝キーレス）
+    cmds:
+      - az deployment group create --resource-group {{.RG}} --template-file main.bicep --parameters main.bicepparam
+
+  up:
+    desc: group-create → deploy → build(v1) を一括実行する
+    cmds:
+      - task: group-create
+      - task: deploy
+      - task: build
+
+  outputs:
+    desc: デプロイ出力（ACR 名 / ログインサーバ / 消費者 UAMI）を表示する
+    cmds:
+      - pwsh -NoProfile -File scripts/outputs.ps1
+
+  # --- イメージを載せる ---------------------------------------------------------
+  build:
+    desc: 'az acr build（ACR Tasks）でクラウド側ビルド & push する（ローカル Docker 不要）。例: task build TAG=v2'
+    cmds:
+      - pwsh -NoProfile -File scripts/build.ps1 -Tag {{.TAG | default "v1"}}
+
+  push-local:
+    desc: '（任意/要 Docker）az acr login → docker build → push の経路。az acr build との対比用'
+    cmds:
+      - pwsh -NoProfile -File scripts/push-local.ps1 -Tag {{.TAG | default "v1"}}
+
+  pull-test:
+    desc: '（任意/要 Docker）admin user 無しで（キーレスに）pull できることを確かめる'
+    cmds:
+      - pwsh -NoProfile -File scripts/pull-test.ps1 -Tag {{.TAG | default "v1"}}
+
+  # --- 中身を覗く / 因果を確かめる ----------------------------------------------
+  inspect:
+    desc: リポジトリ一覧・タグ・マニフェスト(digest)・ヘルスチェックを表示する
+    cmds:
+      - pwsh -NoProfile -File scripts/inspect.ps1
+
+  digest-demo:
+    desc: 同じタグ web:v1 を中身だけ変えて 2 回ビルドし、digest が変わる（tag は動く参照）のを観察する
+    cmds:
+      - pwsh -NoProfile -File scripts/digest-demo.ps1
+
+  admin-on:
+    desc: admin user（共有パスワード）を有効化し、az acr credential show が出ることを確認する（対比用）
+    cmds:
+      - pwsh -NoProfile -File scripts/admin.ps1 -Action on
+
+  admin-off:
+    desc: admin user を無効化（既定・推奨）し、credential が取れない＝Entra+RBAC のみになるのを確認する
+    cmds:
+      - pwsh -NoProfile -File scripts/admin.ps1 -Action off
+
+  # AcrPull の因果をローカルで段階的に観測する（要 Docker）。SP を非特権 ID の代役にする。
+  # 流れ: acrpull-setup → acrpull-pull(成功) → acrpull-revoke → acrpull-pull を数回(403) →
+  #        acrpull-grant → acrpull-pull(また成功) → acrpull-cleanup
+  # 肝: acrpull-pull はロールを触らないので、反映待ちでも何度でも再実行して観察できる。
+  acrpull-setup:
+    desc: '（要 Docker）AcrPull だけ持つテスト用 SP を作成し資格情報を保存する（実験の準備）'
+    cmds:
+      - pwsh -NoProfile -File scripts/acrpull-demo.ps1 -Action setup -Tag {{.TAG | default "v1"}}
+
+  acrpull-pull:
+    desc: '（要 Docker）保存した SP で pull を 1 回試す（★ロールは触らない＝待って何度でも再実行可）'
+    cmds:
+      - pwsh -NoProfile -File scripts/acrpull-demo.ps1 -Action pull
+
+  acrpull-revoke:
+    desc: テスト用 SP から AcrPull を外す（このあと acrpull-pull を数回叩くと 403 を観測できる）
+    cmds:
+      - pwsh -NoProfile -File scripts/acrpull-demo.ps1 -Action revoke
+
+  acrpull-grant:
+    desc: テスト用 SP に AcrPull を付け直す（このあと acrpull-pull で成功に戻る）
+    cmds:
+      - pwsh -NoProfile -File scripts/acrpull-demo.ps1 -Action grant
+
+  acrpull-cleanup:
+    desc: テスト用 SP と保存した資格情報を削除する（実験の後始末）
+    cmds:
+      - pwsh -NoProfile -File scripts/acrpull-demo.ps1 -Action cleanup
+
+  # --- 後始末 -------------------------------------------------------------------
+  destroy:
+    desc: リソースグループごと削除する
+    cmds:
+      - az group delete --name {{.RG}} --yes --no-wait

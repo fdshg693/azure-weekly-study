@@ -4,6 +4,12 @@
 方針はリポジトリ共通（[../CLAUDE.md](../CLAUDE.md)）どおり:
 「**一般概念／最小構成 → 実装 → 設定を出し入れして因果を確かめる**」「**構築・実行はユーザー自身、AI は Azure 上で実行しない**」。
 
+> **責務分け（重複回避）**: ここは **フルオーケストレーション（AKS）**が担当（複数コンテナのスケジューリング・
+> Service/Ingress・HPA・rollout・Workload Identity・Helm/Kustomize・可観測性）。「クラスタを自分で運用してでも
+> 欲しい制御」を得る段。**クラスタを持たずにマネージドへ素直に載せる**範囲（ACI / Web App for Containers /
+> Container Apps の App 側 / ACR）は [../container/PLAN.md](../container/PLAN.md)、**コンテナ単体のローカル深掘り**は
+> [../../local/docker/PLAN.md](../../local/docker/PLAN.md)、**起動して終了するバッチ**は [../automate/CLAUDE.md](../automate/CLAUDE.md) が担当。
+
 ---
 
 ## 1. `simple` で到達済みのこと
