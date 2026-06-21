@@ -1,0 +1,6 @@
+# FastAPI 読み取り API の依存
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+azure-cosmos==4.9.0
+redis==5.2.1
+python-dotenv==1.0.1

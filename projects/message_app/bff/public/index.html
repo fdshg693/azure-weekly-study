@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>メッセージアプリ (MVP)</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- ログイン画面：ユーザー名を入れるだけ（認証なし） -->
+    <section id="login-view" class="view">
+      <div class="login-box">
+        <h1>メッセージアプリ</h1>
+        <p class="muted">ユーザー名を入力してログイン（認証なし MVP）</p>
+        <form id="login-form">
+          <input id="username-input" type="text" placeholder="ユーザー名" autocomplete="off" />
+          <button type="submit">入る</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- メイン画面：左にユーザー一覧、右に会話 -->
+    <section id="main-view" class="view hidden">
+      <header class="topbar">
+        <span>ログイン中: <strong id="me"></strong></span>
+        <button id="logout-btn" class="ghost">ログアウト</button>
+      </header>
+      <div class="layout">
+        <aside class="sidebar">
+          <div class="sidebar-head">
+            <h2>ユーザー</h2>
+            <button id="refresh-users" class="ghost small" title="一覧を再取得">⟳</button>
+          </div>
+          <ul id="user-list"></ul>
+          <p id="users-cache" class="cache-badge"></p>
+        </aside>
+        <main class="chat">
+          <div class="chat-head">
+            <h2 id="chat-with">相手を選択</h2>
+            <button id="refresh-conv" class="ghost small" title="会話を再取得">⟳ リロード</button>
+          </div>
+          <div id="messages" class="messages"></div>
+          <p id="conv-cache" class="cache-badge"></p>
+          <form id="send-form" class="send-form hidden">
+            <input id="message-input" type="text" placeholder="メッセージを入力" autocomplete="off" />
+            <button type="submit">送信</button>
+          </form>
+        </main>
+      </div>
+    </section>
+
+    <script src="app.js"></script>
+  </body>
+</html>

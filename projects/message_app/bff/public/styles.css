@@ -1,0 +1,100 @@
+:root {
+  --bg: #0f172a;
+  --panel: #1e293b;
+  --panel-2: #273449;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --accent: #38bdf8;
+  --mine: #2563eb;
+  --theirs: #334155;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+}
+
+.view { height: 100vh; }
+.hidden { display: none !important; }
+.muted { color: var(--muted); }
+
+/* --- ログイン --- */
+#login-view { display: flex; align-items: center; justify-content: center; }
+.login-box {
+  background: var(--panel);
+  padding: 2.5rem;
+  border-radius: 12px;
+  width: 320px;
+  text-align: center;
+}
+.login-box h1 { margin-top: 0; }
+#login-form { display: flex; gap: 0.5rem; margin-top: 1rem; }
+
+input {
+  flex: 1;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #3b4a63;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 1rem;
+}
+input:focus { outline: 2px solid var(--accent); }
+
+button {
+  padding: 0.6rem 1rem;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #04283a;
+  font-weight: 600;
+  cursor: pointer;
+}
+button:hover { filter: brightness(1.08); }
+button.ghost { background: transparent; color: var(--muted); border: 1px solid #3b4a63; }
+button.small { padding: 0.3rem 0.5rem; font-size: 0.85rem; }
+
+/* --- メイン --- */
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0.75rem 1.25rem; background: var(--panel); border-bottom: 1px solid #0b1220;
+}
+.layout { display: flex; height: calc(100vh - 56px); }
+
+.sidebar {
+  width: 240px; background: var(--panel); padding: 1rem;
+  border-right: 1px solid #0b1220; overflow-y: auto;
+}
+.sidebar-head, .chat-head {
+  display: flex; justify-content: space-between; align-items: center;
+}
+.sidebar h2, .chat h2 { font-size: 1rem; margin: 0 0 0.5rem; }
+#user-list { list-style: none; padding: 0; margin: 0.5rem 0; }
+#user-list li {
+  padding: 0.55rem 0.7rem; border-radius: 8px; cursor: pointer; margin-bottom: 2px;
+}
+#user-list li:hover { background: var(--panel-2); }
+#user-list li.active { background: var(--mine); color: #fff; }
+
+.chat { flex: 1; display: flex; flex-direction: column; padding: 1rem 1.25rem; }
+.chat-head { margin-bottom: 0.5rem; }
+.messages {
+  flex: 1; overflow-y: auto; display: flex; flex-direction: column;
+  gap: 0.4rem; padding: 0.5rem 0;
+}
+.bubble {
+  max-width: 65%; padding: 0.5rem 0.8rem; border-radius: 14px; line-height: 1.35;
+  word-break: break-word;
+}
+.bubble.mine { align-self: flex-end; background: var(--mine); color: #fff; }
+.bubble.theirs { align-self: flex-start; background: var(--theirs); }
+.bubble .ts { display: block; font-size: 0.7rem; opacity: 0.7; margin-top: 2px; }
+
+.send-form { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+
+.cache-badge { font-size: 0.75rem; color: var(--muted); min-height: 1em; margin: 0.25rem 0; }

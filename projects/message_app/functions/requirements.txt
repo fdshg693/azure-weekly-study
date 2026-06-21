@@ -1,0 +1,4 @@
+# Azure Functions（送信処理）の依存
+azure-functions==1.21.3
+azure-cosmos==4.9.0
+redis==5.2.1

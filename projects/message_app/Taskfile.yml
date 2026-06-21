@@ -1,0 +1,77 @@
+# Taskfile（https://taskfile.dev）。just は使わない方針（README 参照）。
+# PowerShell の実体は scripts/*.ps1 に切り出し、ここからは呼び出すだけにしてある
+# （巨大ワンライナーを避け、各操作を素直な .ps1 として読めるようにするため）。
+version: '3'
+
+vars:
+  RG: rg-msgapp-dev
+  LOCATION: japaneast
+  PREFIX: msgapp
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  # --- ローカル開発 ---------------------------------------------------------
+  env-init:
+    desc: ".env と functions/local.settings.json を雛形から作成"
+    cmds:
+      - pwsh -NoProfile -File scripts/env-init.ps1
+
+  local-up:
+    desc: "ローカル依存(Cosmos Emulator / Redis / Azurite)を docker で起動"
+    cmds:
+      - pwsh -NoProfile -File scripts/local-up.ps1
+
+  local-down:
+    desc: "ローカル依存を停止・削除"
+    cmds:
+      - pwsh -NoProfile -File scripts/local-down.ps1
+
+  api:
+    desc: "読み取り API(FastAPI)を起動 http://localhost:8000 (別ターミナルで)"
+    cmds:
+      - pwsh -NoProfile -File scripts/dev-api.ps1
+
+  functions:
+    desc: "送信処理(Azure Functions)を起動 http://localhost:7071 (別ターミナルで)"
+    cmds:
+      - pwsh -NoProfile -File scripts/dev-functions.ps1
+
+  bff:
+    desc: "BFF(Express)+フロントを起動 http://localhost:3000 (別ターミナルで)"
+    cmds:
+      - pwsh -NoProfile -File scripts/dev-bff.ps1
+
+  open:
+    desc: "ブラウザでアプリを開く"
+    cmds:
+      - pwsh -NoProfile -Command "Start-Process 'http://localhost:3000/'"
+
+  seed:
+    desc: "動作確認用データ投入(alice/bob/carol とメッセージ)。要: 3 サービス起動済み"
+    cmds:
+      - pwsh -NoProfile -File scripts/seed.ps1
+
+  # --- Azure デプロイ（実リソース作成・明示実行時のみ） ---------------------
+  deploy:
+    desc: "Bicep でインフラをデプロイ（実リソース作成）"
+    cmds:
+      - pwsh -NoProfile -File scripts/deploy-infra.ps1 -ResourceGroup {{.RG}} -Location {{.LOCATION}} -Prefix {{.PREFIX}}
+
+  publish:
+    desc: "デプロイ済みインフラへ API/Functions/BFF のコードを配置"
+    cmds:
+      - pwsh -NoProfile -File scripts/publish-code.ps1 -ResourceGroup {{.RG}}
+
+  outputs:
+    desc: "デプロイ出力(URL 等)を表示"
+    cmds:
+      - az deployment group show -g {{.RG}} -n main --query properties.outputs --output json
+
+  destroy:
+    desc: "リソースグループごと削除（後片付け）"
+    cmds:
+      - az group delete -n {{.RG}} --yes --no-wait

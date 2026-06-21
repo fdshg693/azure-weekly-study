@@ -1,0 +1,36 @@
+# ローカル開発用の依存（Cosmos DB Emulator / Redis / Azurite）。
+# `task local-up` で起動。アプリ(API/Functions/BFF)はホスト側で動かし、ここへ接続する。
+services:
+  # Cosmos DB Emulator(Linux 版)。初回起動は時間がかかる（証明書・ノード初期化）。
+  cosmos:
+    image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:latest
+    container_name: msgapp-cosmos
+    # 既定の公開キー/エンドポイントで使う。パーティション数は学習用に絞って起動を軽くする。
+    environment:
+      AZURE_COSMOS_EMULATOR_PARTITION_COUNT: "3"
+      AZURE_COSMOS_EMULATOR_ENABLE_DATA_PERSISTENCE: "false"
+      # ホスト側クライアントへ「127.0.0.1:8081」を広告させる。これが無いと
+      # コンテナ内部 IP(172.x) を返してしまい、ホストの SDK から到達できない。
+      AZURE_COSMOS_EMULATOR_IP_ADDRESS_OVERRIDE: "127.0.0.1"
+    ports:
+      - "8081:8081"      # データプレーン
+      - "10251:10251"
+      - "10252:10252"
+      - "10253:10253"
+      - "10254:10254"
+
+  # 一覧キャッシュ用 Redis
+  redis:
+    image: redis:7-alpine
+    container_name: msgapp-redis
+    ports:
+      - "6379:6379"
+
+  # Azure Functions のローカル実行に必要なストレージ（AzureWebJobsStorage）
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: msgapp-azurite
+    ports:
+      - "10000:10000"   # Blob
+      - "10001:10001"   # Queue
+      - "10002:10002"   # Table
