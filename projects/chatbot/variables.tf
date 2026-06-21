@@ -296,7 +296,7 @@ variable "memo_required_role" {
   default     = "Memo.ReadWrite"
 }
 
-# memo_api_app_id は scripts/setup-memo-api.ps1 が作る App Registration の appId。
+# memo_api_app_id は scripts/memo-api/setup-memo-api.ps1 が作る App Registration の appId。
 # 空のままなら Function の EasyAuth は無効（保護なしで疎通だけ試せる）。
 # 設定すると EasyAuth が有効化され、aud=api://<appId> のトークンのみ通す。
 # 値はスクリプトが memo.auto.tfvars に書き出す（*.tfvars は .gitignore 済み）。

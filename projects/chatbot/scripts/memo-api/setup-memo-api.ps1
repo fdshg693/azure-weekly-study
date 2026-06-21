@@ -29,7 +29,7 @@ param(
   [string] $TfvarsPath  = "memo.auto.tfvars"
 )
 
-. "$PSScriptRoot/_common.ps1"
+. "$PSScriptRoot/../_common.ps1"
 
 Write-Host "==> テナントとログイン状態を確認..." -ForegroundColor Cyan
 $tenantId = Get-TenantId
@@ -142,7 +142,7 @@ else {
 # ----------------------------------------------------------------------------
 Write-Host "==> $TfvarsPath に memo_api_app_id を書き出し..." -ForegroundColor Cyan
 $tfvars = @"
-# このファイルは scripts/setup-memo-api.ps1 が自動生成しています。
+# このファイルは scripts/memo-api/setup-memo-api.ps1 が自動生成しています。
 # *.tfvars は .gitignore 済みなのでコミットされません。
 memo_api_app_id = "$appId"
 "@

@@ -11,7 +11,7 @@ param(
   [string] $TfvarsPath  = "memo.auto.tfvars"
 )
 
-. "$PSScriptRoot/_common.ps1"
+. "$PSScriptRoot/../_common.ps1"
 
 $app = Find-EntraApp -DisplayName $DisplayName
 if ($app) {

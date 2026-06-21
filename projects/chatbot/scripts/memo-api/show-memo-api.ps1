@@ -14,7 +14,7 @@ param(
   [string] $RoleValue      = "Memo.ReadWrite"
 )
 
-. "$PSScriptRoot/_common.ps1"
+. "$PSScriptRoot/../_common.ps1"
 
 $app = Find-EntraApp -DisplayName $DisplayName
 if (-not $app) {

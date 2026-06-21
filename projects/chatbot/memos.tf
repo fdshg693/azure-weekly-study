@@ -10,7 +10,7 @@
 #     （Storage Table Data Contributor ロール）。
 #
 # Entra の App Registration / app role 割り当ては Terraform では作らない
-# （state に秘密を残さない既存方針）。scripts/setup-memo-api.ps1 で作成し、
+# （state に秘密を残さない既存方針）。scripts/memo-api/setup-memo-api.ps1 で作成し、
 # その appId を var.memo_api_app_id 経由で EasyAuth に渡す（空なら EasyAuth オフ）。
 
 # ============================================================================

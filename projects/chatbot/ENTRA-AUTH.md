@@ -129,11 +129,11 @@ npm install; npm start
 
 | スクリプト | 役割 | 呼び出す just タスク |
 | --- | --- | --- |
-| [scripts/setup-entra-app.ps1](scripts/setup-entra-app.ps1) | App Registration 作成・リダイレクト URI・ログアウト URL・シークレット・Graph `User.Read`・Expose an API(`access_as_user`)・事前承認・SP をまとめて設定し `auth.auto.tfvars` を生成 | `just auth-setup` |
-| [scripts/show-entra-app.ps1](scripts/show-entra-app.ps1) | アプリの現状（公開スコープ・要求権限・シークレット有効期限・**同意済みスコープ**）を表示 | `just auth-show` |
-| [scripts/destroy-entra-app.ps1](scripts/destroy-entra-app.ps1) | App Registration と `auth.auto.tfvars` を削除 | `just auth-destroy` |
-| [scripts/test-user.ps1](scripts/test-user.ps1) | OBO 体験用のテストユーザーを作成/確認/削除 | `just user-create` / `user-show` / `user-delete` |
-| [scripts/openai-role.ps1](scripts/openai-role.ps1) | 自分への `Cognitive Services OpenAI User` ロールを付与/確認/剥奪 | `just grant-self` / `aoai-role-show` / `aoai-revoke-self` |
+| [scripts/entra-app/setup-entra-app.ps1](scripts/entra-app/setup-entra-app.ps1) | App Registration 作成・リダイレクト URI・ログアウト URL・シークレット・Graph `User.Read`・Expose an API(`access_as_user`)・事前承認・SP をまとめて設定し `auth.auto.tfvars` を生成 | `just auth-setup` |
+| [scripts/entra-app/show-entra-app.ps1](scripts/entra-app/show-entra-app.ps1) | アプリの現状（公開スコープ・要求権限・シークレット有効期限・**同意済みスコープ**）を表示 | `just auth-show` |
+| [scripts/entra-app/destroy-entra-app.ps1](scripts/entra-app/destroy-entra-app.ps1) | App Registration と `auth.auto.tfvars` を削除 | `just auth-destroy` |
+| [scripts/test-user/test-user.ps1](scripts/test-user/test-user.ps1) | OBO 体験用のテストユーザーを作成/確認/削除 | `just user-create` / `user-show` / `user-delete` |
+| [scripts/openai-role/openai-role.ps1](scripts/openai-role/openai-role.ps1) | 自分への `Cognitive Services OpenAI User` ロールを付与/確認/剥奪 | `just grant-self` / `aoai-role-show` / `aoai-revoke-self` |
 | [scripts/_common.ps1](scripts/_common.ps1) | 上記の共通ヘルパー（Graph の固定 ID・PATCH ユーティリティ等） | （内部利用） |
 
 ---

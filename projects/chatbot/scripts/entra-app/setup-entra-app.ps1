@@ -31,7 +31,7 @@ param(
   [switch] $NoLocalhost
 )
 
-. "$PSScriptRoot/_common.ps1"
+. "$PSScriptRoot/../_common.ps1"
 
 Write-Host "==> テナントとログイン状態を確認..." -ForegroundColor Cyan
 $tenantId = Get-TenantId
@@ -161,7 +161,7 @@ $sessionSecret = -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 48 |
 # ----------------------------------------------------------------------------
 Write-Host "==> $TfvarsPath に値を書き出し..." -ForegroundColor Cyan
 $tfvars = @"
-# このファイルは scripts/setup-entra-app.ps1 が自動生成しています。
+# このファイルは scripts/entra-app/setup-entra-app.ps1 が自動生成しています。
 # 機密値を含むため Git にはコミットされません（.gitignore: *.tfvars）。
 entra_tenant_id        = "$tenantId"
 entra_client_id        = "$appId"

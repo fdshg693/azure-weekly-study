@@ -18,7 +18,7 @@ param(
   [string] $DisplayName = "chatbot-graph-demo"
 )
 
-. "$PSScriptRoot/_common.ps1"
+. "$PSScriptRoot/../_common.ps1"
 
 function Write-Section {
   param([string] $Title)
