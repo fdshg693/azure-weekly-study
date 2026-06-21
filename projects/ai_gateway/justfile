@@ -82,8 +82,13 @@ app-env-sync:
   @pwsh -NoProfile -File scripts/app-env-sync.ps1
 
 # アプリを起動（要 az login。app/.env の AZURE_OPENAI_ENDPOINT / AZURE_OPENAI_DEPLOYMENT を使う）
+# ステップ4 以降は管理 UI も同時に公開される（http://localhost:3000/）。
 app-dev:
   @node app/server.js
+
+# 管理 UI（ステップ4）を既定ブラウザで開く。アプリ(app-dev)起動中に別ターミナルで実行。
+app-open port="3000":
+  @Start-Process "http://localhost:{{port}}/"
 
 # 起動中のアプリへ推論リクエストを 1 発投げて応答を確認（別ターミナルで実行）
 # 例: just infer "日本の首都は？"  /  just infer "こんにちは" gpt-5
