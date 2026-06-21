@@ -1,0 +1,91 @@
+set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+
+# Terraform variables.tf のデフォルト値と合わせる
+resource_group := "rg-aigw-dev-seiwan"
+openai_account := "aoai-aigw-dev-seiwan"
+
+default:
+  @just --list
+
+# ----------------------------------------------------------------------------
+# Terraform（ステップ0: IaC 土台）
+# ----------------------------------------------------------------------------
+
+# プロバイダーを初期化
+init:
+  @terraform init
+
+# 変更内容のプレビュー
+plan:
+  @terraform plan
+
+# インフラを作成・更新（確認なし）。※実リソースを作るのでガードレールに注意（README参照）
+apply:
+  @terraform apply -auto-approve
+
+# インフラを削除（確認なし）。学習後の後片付け用
+destroy:
+  @terraform destroy -auto-approve
+
+# 出力値を表示
+output:
+  @terraform output
+
+# ----------------------------------------------------------------------------
+# 動作確認 / 体験
+# ----------------------------------------------------------------------------
+
+# ステップ0 の土台ができたか確認（アカウント / デプロイ0件 / ロール）
+verify:
+  @pwsh -NoProfile -File scripts/verify.ps1 -ResourceGroup "{{resource_group}}" -OpenAiAccount "{{openai_account}}"
+
+# このリージョンでデプロイ可能なベースモデル一覧（後続ステップの選択肢になる）
+models:
+  @az cognitiveservices account list-models -n {{openai_account}} -g {{resource_group}} --query "[].{model:name, version:version, format:format, sku:skus[0].name}" --output table
+
+# ----------------------------------------------------------------------------
+# モデルデプロイ操作（コントロールプレーン書き込み・要 Contributor ロール）
+# ※ 本来はステップ3 で管理 UI から行う対象。それまでの動作確認用 CLI ラッパー。
+# ----------------------------------------------------------------------------
+
+# モデルをデプロイ（ステップ1 の前提づくり）。引数省略時は GPT-4.1 / GlobalStandard / TPM 10。
+# 例: just deploy-model  /  just deploy-model gpt-5 gpt-5 2025-08-07  /  just deploy-model gpt-4.1 gpt-4.1 2025-04-14 GlobalStandard 1
+deploy-model name="gpt-4.1" model="gpt-4.1" version="2025-04-14" sku="GlobalStandard" capacity="10":
+  @pwsh -NoProfile -File scripts/deploy-model.ps1 -ResourceGroup "{{resource_group}}" -OpenAiAccount "{{openai_account}}" -DeploymentName "{{name}}" -ModelName "{{model}}" -ModelVersion "{{version}}" -Sku "{{sku}}" -Capacity {{capacity}}
+
+# 作成済みデプロイの一覧（デプロイ名・モデル・状態・容量を確認）
+deploy-list:
+  @az cognitiveservices account deployment list -n {{openai_account}} -g {{resource_group}} --query "[].{deployment:name, model:properties.model.name, version:properties.model.version, state:properties.provisioningState, sku:sku.name, capacity:sku.capacity}" --output table
+
+# デプロイを削除（後片付け / ステップ5 の体験用）。例: just deploy-delete gpt-4.1
+deploy-delete name:
+  @az cognitiveservices account deployment delete -n {{openai_account}} -g {{resource_group}} --deployment-name "{{name}}" && echo "deleted deployment: {{name}}"
+
+# terraform output からエンドポイントを .env に書き出す（後続ステップのアプリ用）
+env-sync:
+  @$endpoint = (terraform output -raw openai_endpoint); Set-Content -Path .env -Value "AZURE_OPENAI_ENDPOINT=$endpoint"; Write-Host "Wrote .env (AZURE_OPENAI_ENDPOINT=$endpoint)"
+
+# 自分のロール割り当て状況だけを確認（読み取り専用）
+roles:
+  @$id = (terraform output -raw openai_account_id); az role assignment list --scope $id --output table
+
+# ----------------------------------------------------------------------------
+# アプリ（ステップ1: データプレーン推論の最小エンドポイント）
+# ----------------------------------------------------------------------------
+
+# 依存パッケージをインストール
+app-install:
+  @npm --prefix app install
+
+# .env が無ければ terraform output からエンドポイントを書き出して app/.env を用意する
+app-env-sync:
+  @$endpoint = (terraform output -raw openai_endpoint); $deployment = $env:AOAI_DEPLOYMENT; if (-not $deployment) { $deployment = "gpt-4.1" }; Set-Content -Path app/.env -Value @("AZURE_OPENAI_ENDPOINT=$endpoint", "AZURE_OPENAI_DEPLOYMENT=$deployment"); Write-Host "Wrote app/.env (endpoint=$endpoint, deployment=$deployment)"
+
+# アプリを起動（要 az login。app/.env の AZURE_OPENAI_ENDPOINT / AZURE_OPENAI_DEPLOYMENT を使う）
+app-dev:
+  @node app/server.js
+
+# 起動中のアプリへ推論リクエストを 1 発投げて応答を確認（別ターミナルで実行）
+# 例: just infer "日本の首都は？"  /  just infer "こんにちは" gpt-5
+infer prompt deployment="":
+  @pwsh -NoProfile -File scripts/call-infer.ps1 -Prompt "{{prompt}}" -Deployment "{{deployment}}"

@@ -2,6 +2,8 @@
 *.zip
 *.log
 
+.claude/
+
 # ======= 参照用外部ライブラリコピー =======
 
 projects/chatbot/app/openai-node
