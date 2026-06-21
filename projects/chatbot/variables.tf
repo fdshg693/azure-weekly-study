@@ -247,6 +247,66 @@ variable "tavily_secret_name" {
 }
 
 # ----------------------------------------------------------------------------
+# 共有メモ機能（Azure Function + Table Storage）関連の変数
+# ----------------------------------------------------------------------------
+variable "memo_storage_account_name" {
+  description = <<-EOT
+    メモ保存用 Storage Account 名。グローバルで一意・小文字英数字のみ・3-24文字。
+    Function の MI が "Storage Table Data Contributor" でキーレス読み書きする。
+  EOT
+  type        = string
+  default     = "stchatbotmemoseiwan"
+
+  validation {
+    condition     = can(regex("^[a-z0-9]{3,24}$", var.memo_storage_account_name))
+    error_message = "memo_storage_account_name は小文字英数字のみ・3-24文字である必要があります。"
+  }
+}
+
+variable "memo_table_name" {
+  description = "メモを格納する Table 名（Function の MEMO_TABLE_NAME と一致させる）"
+  type        = string
+  default     = "memos"
+}
+
+variable "func_service_plan_name" {
+  description = "メモ Function 用 App Service Plan 名（Consumption/Y1）"
+  type        = string
+  default     = "asp-func-chatbot-dev-seiwan"
+}
+
+variable "func_app_name" {
+  description = <<-EOT
+    メモ CRUD Function App 名。グローバルで一意。
+    URL は https://<name>.azurewebsites.net、API は /api/memos。
+    アプリ（app/.env / App Settings）の MEMO_API_BASE_URL に同じホストを設定する。
+  EOT
+  type        = string
+  default     = "func-chatbot-memo-dev-seiwan"
+
+  validation {
+    condition     = can(regex("^[a-zA-Z0-9-]{2,60}$", var.func_app_name))
+    error_message = "func_app_name は英数字とハイフンのみ・2-60文字である必要があります。"
+  }
+}
+
+variable "memo_required_role" {
+  description = "メモ Function が要求する app role 名（Function の MEMO_REQUIRED_ROLE と一致）"
+  type        = string
+  default     = "Memo.ReadWrite"
+}
+
+# memo_api_app_id は scripts/setup-memo-api.ps1 が作る App Registration の appId。
+# 空のままなら Function の EasyAuth は無効（保護なしで疎通だけ試せる）。
+# 設定すると EasyAuth が有効化され、aud=api://<appId> のトークンのみ通す。
+# 値はスクリプトが memo.auto.tfvars に書き出す（*.tfvars は .gitignore 済み）。
+variable "memo_api_app_id" {
+  description = "メモ Function を保護する Entra App Registration の appId（空なら EasyAuth 無効）"
+  type        = string
+  default     = ""
+}
+
+# ----------------------------------------------------------------------------
 # タグ関連の変数
 # ----------------------------------------------------------------------------
 variable "tags" {

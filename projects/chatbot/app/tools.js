@@ -20,6 +20,7 @@
 
 const obo = require("./auth_obo");
 const { isConfigured } = require("./auth");
+const memos = require("./memos");
 
 // ----------------------------------------------------------------------------
 // リモート MCP ツール（Tavily Web 検索）+ API キーの取得（Key Vault / 環境変数）
@@ -206,9 +207,112 @@ async function runGetUserProfile(req, args = {}) {
   }
 }
 
+// ============================================================================
+// 全ユーザー共有メモの CRUD ツール（memos.js 経由で Azure Function を呼ぶ）
+// ----------------------------------------------------------------------------
+// get_user_profile が「OBO でサインイン本人の権限」だったのに対し、こちらは
+// 「アプリ自身（マネージド ID）の権限」で共有メモを操作する（memos.js を参照）。
+// 共有リソースなのでログイン状態に依存せず、ツールは常に AI へ渡す（Tavily と同じ扱い）。
+// 実体は app/memos.js に集約し、ここでは AI 向けの「定義」と薄い委譲だけを書く。
+// ============================================================================
+const memoToolDefinitions = [
+  {
+    type: "function",
+    name: "list_memos",
+    description:
+      "全ユーザー共有のメモ一覧を取得する。ユーザーが『メモ一覧』『何をメモした？』など" +
+      "保存済みメモの確認を求めたときに使う。",
+    parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
+  },
+  {
+    type: "function",
+    name: "create_memo",
+    description:
+      "共有メモを新規作成する。ユーザーが『〜とメモして』『〜を覚えておいて』など" +
+      "記録を求めたときに使う。",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "メモの見出し（必須・短く）" },
+        body: { type: "string", description: "メモの本文（任意・詳細）" },
+      },
+      required: ["title"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
+    name: "update_memo",
+    description:
+      "既存の共有メモを更新する。先に list_memos で対象メモの id を確認してから呼ぶこと。",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "更新対象メモの id（list_memos で取得）" },
+        title: { type: "string", description: "新しい見出し（変更する場合のみ）" },
+        body: { type: "string", description: "新しい本文（変更する場合のみ）" },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
+    name: "delete_memo",
+    description:
+      "共有メモを削除する。先に list_memos で対象メモの id を確認してから呼ぶこと。",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "削除対象メモの id（list_memos で取得）" },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+];
+
+// メモツールの実体。AI からの引数を memos.js のクライアントに委譲する。
+// エラーは throw せず { error } で返し、会話ループ（server.js）が止まらないようにする。
+async function runListMemos() {
+  try {
+    return await memos.listMemos();
+  } catch (err) {
+    return { error: "メモ一覧の取得に失敗しました: " + (err.message || String(err)) };
+  }
+}
+async function runCreateMemo(_req, args = {}) {
+  try {
+    return await memos.createMemo({ title: args.title, body: args.body });
+  } catch (err) {
+    return { error: "メモの作成に失敗しました: " + (err.message || String(err)) };
+  }
+}
+async function runUpdateMemo(_req, args = {}) {
+  if (!args.id) return { error: "id が必要です（list_memos で確認してください）" };
+  try {
+    const memo = await memos.updateMemo(args.id, { title: args.title, body: args.body });
+    return memo || { error: `id=${args.id} のメモが見つかりません` };
+  } catch (err) {
+    return { error: "メモの更新に失敗しました: " + (err.message || String(err)) };
+  }
+}
+async function runDeleteMemo(_req, args = {}) {
+  if (!args.id) return { error: "id が必要です（list_memos で確認してください）" };
+  try {
+    return await memos.deleteMemo(args.id);
+  } catch (err) {
+    return { error: "メモの削除に失敗しました: " + (err.message || String(err)) };
+  }
+}
+
 // 名前 → 実体のディスパッチ表（ツールが増えてもここに足すだけ）。
 const handlers = {
   get_user_profile: runGetUserProfile,
+  list_memos: runListMemos,
+  create_memo: runCreateMemo,
+  update_memo: runUpdateMemo,
+  delete_memo: runDeleteMemo,
 };
 
 // このリクエストで AI に渡すツール定義の配列を返す。
@@ -217,6 +321,9 @@ async function toolsForRequest(req) {
   const list = [];
   // 自前の function ツール（ログイン状態で出し分け）。
   if (isAvailable(req)) list.push(toolDefinition);
+  // 共有メモツール。全ユーザー共有リソースなのでログイン状態に依らず常に渡す
+  // （実体 memos.js が Function 経路 / インメモリ Mock を環境変数で自動選択する）。
+  list.push(...memoToolDefinitions);
   // リモート MCP ツール（Tavily）。キーが取れれば誰でも使える（ユーザー固有でないため）。
   const tavily = await tavilyMcpTool();
   if (tavily) list.push(tavily);

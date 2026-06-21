@@ -88,12 +88,57 @@ just user-delete  # テストユーザーを削除（後片付け）
 
 ---
 
-## 5. 後片付け
+## 5. 共有メモ（AI も人も操作できる / MI でアプリとして Function を叩く）
+
+`get_user_profile`（OBO）の対になる **「アプリ自身のマネージド ID で保護 API を呼ぶ」** 例。
+メモは全ユーザー共有なので OBO は使わない。詳細は [function/README.md](function/README.md)。
+
+### 5-1. まず Azure 無しで配線を確認（インメモリ Mock）
 
 ```powershell
-just user-delete  # テストユーザーを削除（作成していれば）
-just auth-destroy # App Registration と auth.auto.tfvars を削除
-just destroy      # 全 Azure リソースを削除
+just dev          # MEMO_API_BASE_URL 未設定なら Mock で動く
+```
+
+1. ヘッダーの **「共有メモ」** を開き、手動でメモを作成・編集・削除
+2. チャットで「**『牛乳を買う』ってメモして**」→ AI が `create_memo` を実行 → `/memos` に反映
+3. 「**メモ一覧は？**」→ AI が `list_memos` で読む（手動で足したメモも見える）
+
+> Mock はプロセス内・再起動で消える。永続化は次の 5-2/5-3。
+
+### 5-2. ローカルで実 Function に繋ぐ（Azurite + Functions Core Tools）
+
+```powershell
+azurite                       # 別ターミナル（Table エミュレータ）
+just func-dev                 # function/ で func start（http://localhost:7071）
+```
+
+`app/.env` に `MEMO_API_BASE_URL=http://localhost:7071`（`MEMO_API_SCOPE` は空）を設定して `just dev`。
+→ UI と AI の両方が Table へ永続 CRUD する。
+
+### 5-3. Azure にデプロイして MI + EasyAuth で保護
+
+```powershell
+just apply         # Storage / Table / Function App / ロールを作成（memos.tf）
+just func-deploy   # 関数コードを Function App に publish
+just memo-api-setup # Entra で保護し Web App MI に app role(Memo.ReadWrite) を割当
+just apply         # memo.auto.tfvars 反映で EasyAuth 有効化
+```
+
+その後 Web App の App Settings に `MEMO_API_BASE_URL`（= `terraform output -raw memo_api_base_url`）と
+`MEMO_API_SCOPE`（= `terraform output -raw memo_api_scope`）を設定して `just deploy`。
+
+> **権限を外して 403 を観察（学習目的）**: `just memo-api-show` で割り当てを確認 →
+> Entra で Web App MI の `Memo.ReadWrite` 割り当てを外すと、AI/手動どちらのメモ操作も 403 になる。
+
+---
+
+## 6. 後片付け
+
+```powershell
+just user-delete    # テストユーザーを削除（作成していれば）
+just memo-api-destroy # メモ API の App Registration と memo.auto.tfvars を削除
+just auth-destroy   # App Registration と auth.auto.tfvars を削除
+just destroy        # 全 Azure リソースを削除
 ```
 
 ---

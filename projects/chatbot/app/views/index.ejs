@@ -14,6 +14,7 @@
       <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="mb-0"><%= title %></h1>
         <div>
+          <a href="/memos" class="btn btn-outline-primary btn-sm">共有メモ</a>
           <% if (typeof authConfigured !== "undefined" && authConfigured) { %>
             <% if (typeof oboSignedIn !== "undefined" && oboSignedIn) { %>
               <span class="badge text-bg-success align-middle">OBO サインイン中（AI が本人の Graph を取得可）</span>

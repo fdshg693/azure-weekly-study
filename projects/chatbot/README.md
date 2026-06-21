@@ -11,9 +11,16 @@ Azure App Service（Linux / Node.js 20 LTS）上で動く Azure OpenAI チャッ
 ```
 ユーザー ──HTTPS──> [Linux Web App (Express + EJS)]
                           │  ManagedIdentity / DefaultAzureCredential
+                          ├──────────────▶ [Azure OpenAI: gpt-4o-mini / gpt-5]
+                          │  MIトークン(app role)
                           ▼
-                  [Azure OpenAI: gpt-4o-mini]
+                  [Function App: メモ CRUD] ──MI──▶ [Table Storage]
+                   （EasyAuth で保護 / 全ユーザー共有メモ）
 ```
+
+> **2 つの認証パターンを学べる**: 既存の `get_user_profile` は **OBO（サインイン本人の委任権限）** で Graph を叩く例。
+> 追加した**共有メモ**は対になる **「アプリ自身（マネージド ID）の権限で保護 API を叩く」** 例で、共有データなので OBO を使わない。
+> 詳細は [function/README.md](function/README.md)。
 
 - **リソースグループ** (`azurerm_resource_group`)
 - **App Service Plan** (`azurerm_service_plan`) — Linux / 既定 `B1`（F1 だと npm install でメモリ不足になることがある）
@@ -29,9 +36,11 @@ Azure App Service（Linux / Node.js 20 LTS）上で動く Azure OpenAI チャッ
 | [provider.tf](provider.tf) | `azurerm ~> 3.0` プロバイダー設定 |
 | [variables.tf](variables.tf) | 名前・リージョン・SKU・OpenAI モデル設定など |
 | [main.tf](main.tf) | RG / Plan / Web App / Azure OpenAI / モデルデプロイ / ロール割り当て |
-| [outputs.tf](outputs.tf) | Web App URL、OpenAI エンドポイント、動作確認コマンド等 |
+| [memos.tf](memos.tf) | 共有メモ機能の Storage / Table / Function App / EasyAuth / ロール割り当て |
+| [outputs.tf](outputs.tf) | Web App URL、OpenAI エンドポイント、Function URL、動作確認コマンド等 |
 | [justfile](justfile) | Terraform 操作・パッケージ・デプロイ・ローカル開発のタスク |
 | [app/](app/) | Express + EJS アプリ本体。**アプリ側の実装・認証デモの説明は [app/README.md](app/README.md) を参照** |
+| [function/](function/) | 全ユーザー共有メモを CRUD する Azure Function。**MI でアプリとして呼ぶ（OBO の対）。説明は [function/README.md](function/README.md)** |
 | [scripts/](scripts/) | Entra ID App Registration やテストユーザーの作成・確認・削除を行う PowerShell（一覧は [ENTRA-AUTH.md](ENTRA-AUTH.md#4-scripts-一覧)） |
 
 ## 主な変数（デフォルト値）

@@ -4,8 +4,11 @@ set shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
 resource_group := "rg-chatbot-dev-seiwan"
 web_app_name   := "webapp-chatbot-dev-seiwan"
 app_dir        := "app"
+func_dir       := "function"
 zip_path       := "app.zip"
 entra_app_name := "chatbot-graph-demo"
+# メモ Function App 名（variables.tf の func_app_name デフォルトと合わせる）
+func_app_name  := "func-chatbot-memo-dev-seiwan"
 # Key Vault 上の Tavily シークレット名（variables.tf の tavily_secret_name と合わせる）
 tavily_secret := "tavily-api-key"
 
@@ -68,6 +71,34 @@ auth-show:
 # App Registration と auth.auto.tfvars を削除（後片付け）
 auth-destroy:
   @pwsh -NoProfile -File scripts/destroy-entra-app.ps1 -DisplayName "{{entra_app_name}}"
+
+# ----------------------------------------------------------------------------
+# 共有メモ Function（Azure Function / Table Storage）
+# ----------------------------------------------------------------------------
+# 全ユーザー共有メモの CRUD を行う Function。アプリは Web App の MI で呼ぶ（OBO ではない）。
+
+# Function をローカル起動（事前に Azurite と Azure Functions Core Tools が必要）。
+# 別ターミナルで `azurite` を起動しておくこと（Table エミュレータ）。
+func-dev:
+  @Push-Location {{func_dir}}; npm install; func start; Pop-Location
+
+# Function を Azure にデプロイ（func azure functionapp publish）。
+# 事前に `just apply` で Function App を作成しておくこと。
+func-deploy:
+  @Push-Location {{func_dir}}; npm install; func azure functionapp publish {{func_app_name}}; Pop-Location
+
+# メモ Function を Entra で保護し、Web App の MI に app role(Memo.ReadWrite) を割り当て。
+# 実行後は `just apply` で EasyAuth が有効化される（memo.auto.tfvars 反映）。
+memo-api-setup:
+  @pwsh -NoProfile -File scripts/setup-memo-api.ps1 -WebAppName "{{web_app_name}}" -ResourceGroup "{{resource_group}}"
+
+# メモ API の App Registration / app role 割り当て状況を確認（読み取り専用）。
+memo-api-show:
+  @pwsh -NoProfile -File scripts/show-memo-api.ps1 -WebAppName "{{web_app_name}}" -ResourceGroup "{{resource_group}}"
+
+# メモ API の App Registration を削除し memo.auto.tfvars を片付け（後片付け）。
+memo-api-destroy:
+  @pwsh -NoProfile -File scripts/destroy-memo-api.ps1
 
 # ----------------------------------------------------------------------------
 # テストユーザー（別ユーザーでログインすると AI の答えが変わる体験用）

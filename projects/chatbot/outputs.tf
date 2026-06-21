@@ -89,6 +89,39 @@ output "key_vault_uri" {
 }
 
 # ----------------------------------------------------------------------------
+# 共有メモ機能（Function + Table Storage）情報
+# ----------------------------------------------------------------------------
+output "memo_storage_account_name" {
+  description = "メモ保存用 Storage Account 名"
+  value       = azurerm_storage_account.memos.name
+}
+
+output "func_app_name" {
+  description = "メモ CRUD Function App 名（func azure functionapp publish の対象）"
+  value       = azurerm_linux_function_app.memos.name
+}
+
+output "func_app_hostname" {
+  description = "メモ Function のホスト名"
+  value       = azurerm_linux_function_app.memos.default_hostname
+}
+
+output "memo_api_base_url" {
+  description = "アプリの MEMO_API_BASE_URL に設定する Function のベース URL"
+  value       = "https://${azurerm_linux_function_app.memos.default_hostname}"
+}
+
+output "func_app_principal_id" {
+  description = "メモ Function のシステム割り当て MI の principal_id（Table への書き込み権限を持つ）"
+  value       = azurerm_linux_function_app.memos.identity[0].principal_id
+}
+
+output "memo_api_scope" {
+  description = "アプリの MEMO_API_SCOPE に設定する値（memo_api_app_id 設定時のみ意味を持つ）"
+  value       = var.memo_api_app_id == "" ? "(EasyAuth 無効: memo_api_app_id 未設定)" : "api://${var.memo_api_app_id}/.default"
+}
+
+# ----------------------------------------------------------------------------
 # 動作確認用の CLI コマンド
 # ----------------------------------------------------------------------------
 output "verify_commands" {

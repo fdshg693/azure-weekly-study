@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title><%= title %></title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="bg-light">
+    <div class="container py-4" style="max-width: 720px;">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 class="mb-0"><%= title %></h1>
+        <div>
+          <% if (isRemote) { %>
+            <span class="badge text-bg-success align-middle">Function 経由（共有・永続）</span>
+          <% } else { %>
+            <span class="badge text-bg-secondary align-middle">Mock（メモリ内・再起動で消える）</span>
+          <% } %>
+          <a href="/" class="btn btn-outline-secondary btn-sm">チャットへ戻る</a>
+        </div>
+      </div>
+      <p class="text-muted small">
+        全ユーザー共有のメモです。ここでの手動操作も、チャットで AI に頼んだ操作も、同じバックエンド
+        （Azure Function / Managed Identity）を経由します。
+      </p>
+
+      <!-- 新規作成フォーム -->
+      <div class="card mb-3">
+        <div class="card-body">
+          <h2 class="h6 text-muted">新しいメモ</h2>
+          <form id="create-form" class="vstack gap-2">
+            <input id="new-title" type="text" class="form-control" placeholder="見出し（必須）" required />
+            <textarea id="new-body" class="form-control" rows="2" placeholder="本文（任意）"></textarea>
+            <div>
+              <button type="submit" class="btn btn-primary btn-sm">追加</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div id="error" class="alert alert-danger d-none" role="alert"></div>
+
+      <!-- メモ一覧 -->
+      <div id="memo-list" class="vstack gap-2"></div>
+      <p id="empty" class="text-muted d-none">メモはまだありません。</p>
+    </div>
+
+    <script>
+      (() => {
+        const listEl = document.getElementById("memo-list");
+        const emptyEl = document.getElementById("empty");
+        const errorEl = document.getElementById("error");
+        const createForm = document.getElementById("create-form");
+        const newTitle = document.getElementById("new-title");
+        const newBody = document.getElementById("new-body");
+
+        function showError(msg) {
+          errorEl.textContent = msg;
+          errorEl.classList.remove("d-none");
+        }
+        function clearError() {
+          errorEl.classList.add("d-none");
+        }
+
+        // HTML エスケープ（メモ本文をそのまま描画しないため）。
+        function esc(s) {
+          return String(s == null ? "" : s)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+        }
+
+        // 1 件分のカード DOM を組み立てる。編集はインラインのフォームで行う。
+        function renderMemo(memo) {
+          const card = document.createElement("div");
+          card.className = "card";
+          card.innerHTML = `
+            <div class="card-body">
+              <input class="form-control form-control-sm mb-1 edit-title" value="${esc(memo.title)}" />
+              <textarea class="form-control form-control-sm mb-2 edit-body" rows="2">${esc(memo.body)}</textarea>
+              <div class="d-flex justify-content-between align-items-center">
+                <small class="text-muted">id: ${esc(memo.id)} / 更新: ${esc(memo.updatedAt || "")}</small>
+                <div class="btn-group btn-group-sm">
+                  <button class="btn btn-outline-primary save-btn">保存</button>
+                  <button class="btn btn-outline-danger delete-btn">削除</button>
+                </div>
+              </div>
+            </div>`;
+          const titleInput = card.querySelector(".edit-title");
+          const bodyInput = card.querySelector(".edit-body");
+
+          card.querySelector(".save-btn").addEventListener("click", async () => {
+            clearError();
+            try {
+              const res = await fetch("/api/memos/" + encodeURIComponent(memo.id), {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ title: titleInput.value, body: bodyInput.value }),
+              });
+              if (!res.ok) throw new Error((await res.json()).error || "更新に失敗しました");
+              await load();
+            } catch (err) {
+              showError(err.message);
+            }
+          });
+
+          card.querySelector(".delete-btn").addEventListener("click", async () => {
+            clearError();
+            try {
+              const res = await fetch("/api/memos/" + encodeURIComponent(memo.id), { method: "DELETE" });
+              if (!res.ok) throw new Error((await res.json()).error || "削除に失敗しました");
+              await load();
+            } catch (err) {
+              showError(err.message);
+            }
+          });
+          return card;
+        }
+
+        async function load() {
+          clearError();
+          try {
+            const res = await fetch("/api/memos");
+            if (!res.ok) throw new Error((await res.json()).error || "一覧取得に失敗しました");
+            const data = await res.json();
+            const memos = data.memos || [];
+            listEl.innerHTML = "";
+            emptyEl.classList.toggle("d-none", memos.length > 0);
+            memos.forEach((m) => listEl.appendChild(renderMemo(m)));
+          } catch (err) {
+            showError(err.message);
+          }
+        }
+
+        createForm.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          clearError();
+          const title = newTitle.value.trim();
+          if (!title) return;
+          try {
+            const res = await fetch("/api/memos", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ title, body: newBody.value }),
+            });
+            if (!res.ok) throw new Error((await res.json()).error || "作成に失敗しました");
+            newTitle.value = "";
+            newBody.value = "";
+            await load();
+          } catch (err) {
+            showError(err.message);
+          }
+        });
+
+        load();
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,14 @@
+# Functions のローカル設定（接続文字列を含むためコミットしない）
+local.settings.json
+
+# 依存とビルド成果物
+node_modules/
+dist/
+bin/
+obj/
+
+# Azure Functions Core Tools の作業ファイル
+.python_packages/
+__azurite_db*__.json
+__blobstorage__/
+__queuestorage__/

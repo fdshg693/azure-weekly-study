@@ -12,6 +12,7 @@ const { getBearerTokenProvider, DefaultAzureCredential } = require("@azure/ident
 const auth = require("./auth");
 const authObo = require("./auth_obo");
 const tools = require("./tools");
+const memos = require("./memos");
 const { CHAT_MODELS, DEFAULT_CHAT_MODEL_ID, getChatModel } = require("./config/models");
 
 const port = process.env.PORT || 3000;
@@ -48,7 +49,10 @@ const SYSTEM_PROMPT =
   "get_user_profile ツールが使える場合はそれを呼び出して正確に答えてください。" +
   "ツールが使えない場合は、サインインすると自分の情報を取得できる旨を案内してください。" +
   "最新の情報や事実確認が必要なとき、Web 検索系のツール（Tavily）が使える場合は" +
-  "それを使って調べてから答えてください。";
+  "それを使って調べてから答えてください。" +
+  "全ユーザー共有のメモの操作（一覧・作成・更新・削除）を頼まれたら、memo 系ツール" +
+  "（list_memos / create_memo / update_memo / delete_memo）を使ってください。" +
+  "更新・削除のときは先に list_memos で対象の id を確認してから実行してください。";
 const MAX_HISTORY = 40;
 // ツール呼び出し → 結果を返して再生成、のループ上限（暴走防止）。
 const MAX_TOOL_ROUNDS = 5;
@@ -98,6 +102,62 @@ app.get("/auth/signin-obo", authObo.signin);
 app.get("/auth/redirect-obo", authObo.redirect);
 app.get("/profile-obo", authObo.profile);
 app.post("/profile-obo/fail-test", authObo.failTest);
+
+// ============================================================================
+// 全ユーザー共有メモ（手動 UI + REST）
+// ----------------------------------------------------------------------------
+// AI のツール呼び出しと同じ memos.js（→ Azure Function / Mock）を経由する。
+// 人が手動でも AI でも同じバックエンドを操作できることを体験するための配線。
+// ============================================================================
+app.get("/memos", (req, res) => {
+  res.render("memos", {
+    title: "共有メモ",
+    // Function 経路か Mock かを画面に出して、どの構成で動いているか分かるようにする。
+    isRemote: memos.isRemote,
+  });
+});
+
+// 一覧
+app.get("/api/memos", async (_req, res) => {
+  try {
+    const data = await memos.listMemos();
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: "メモ一覧の取得に失敗しました: " + (err.message || String(err)) });
+  }
+});
+
+// 作成
+app.post("/api/memos", async (req, res) => {
+  try {
+    const memo = await memos.createMemo({ title: req.body?.title, body: req.body?.body });
+    res.status(201).json(memo);
+  } catch (err) {
+    const status = err.statusCode && err.statusCode < 500 ? err.statusCode : 502;
+    res.status(status).json({ error: "メモの作成に失敗しました: " + (err.message || String(err)) });
+  }
+});
+
+// 更新（部分更新）
+app.patch("/api/memos/:id", async (req, res) => {
+  try {
+    const memo = await memos.updateMemo(req.params.id, { title: req.body?.title, body: req.body?.body });
+    if (!memo) return res.status(404).json({ error: "メモが見つかりません" });
+    res.json(memo);
+  } catch (err) {
+    res.status(502).json({ error: "メモの更新に失敗しました: " + (err.message || String(err)) });
+  }
+});
+
+// 削除
+app.delete("/api/memos/:id", async (req, res) => {
+  try {
+    const result = await memos.deleteMemo(req.params.id);
+    res.json(result);
+  } catch (err) {
+    res.status(502).json({ error: "メモの削除に失敗しました: " + (err.message || String(err)) });
+  }
+});
 
 app.post("/chat", async (req, res) => {
   const history = Array.isArray(req.body?.messages) ? req.body.messages : [];

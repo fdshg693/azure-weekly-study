@@ -1,0 +1,29 @@
+{
+  "//": "このファイルを local.settings.json にコピーしてローカル実行する（local.settings.json は .gitignore 済み）。",
+  "//copy": "cp local.settings.json.example local.settings.json",
+  "IsEncrypted": false,
+  "Values": {
+    "//runtime": "Functions ランタイム本体。Node.js v4 モデルを使う。",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "AzureWebJobsFeatureFlags": "EnableWorkerIndexing",
+
+    "//storage-runtime": "Functions ランタイムが内部状態に使うストレージ。ローカルは Azurite（ストレージエミュレータ）を指す。",
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+
+    "//memo-table": "メモを保存する Table 名（Terraform の azurerm_storage_table.memos と合わせる）。",
+    "MEMO_TABLE_NAME": "memos",
+
+    "//memo-store-local": "ローカルは Azurite の Table へ接続文字列で繋ぐ（キーレス MI ではなくエミュレータの既定キー）。",
+    "MEMO_STORAGE_CONNECTION_STRING": "UseDevelopmentStorage=true",
+
+    "//memo-store-azure": "Azure 上ではキー文字列ではなく、この URL + Managed Identity（DefaultAzureCredential）で繋ぐ。ローカルでは未設定でよい。",
+    "//MEMO_STORAGE_ACCOUNT_URL": "https://<storage-account>.table.core.windows.net/",
+
+    "//auth": "ローカルは EasyAuth が無いので認可チェックを無効化。Azure 上は Terraform が true を入れる。",
+    "MEMO_REQUIRE_AUTH": "false",
+    "MEMO_REQUIRED_ROLE": "Memo.ReadWrite"
+  },
+  "Host": {
+    "CORS": "*"
+  }
+}
