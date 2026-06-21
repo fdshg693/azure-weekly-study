@@ -77,9 +77,9 @@ roles:
 app-install:
   @npm --prefix app install
 
-# .env が無ければ terraform output からエンドポイントを書き出して app/.env を用意する
+# terraform output から app/.env を用意（endpoint + account-id + 既定 deployment）
 app-env-sync:
-  @$endpoint = (terraform output -raw openai_endpoint); $deployment = $env:AOAI_DEPLOYMENT; if (-not $deployment) { $deployment = "gpt-4.1" }; Set-Content -Path app/.env -Value @("AZURE_OPENAI_ENDPOINT=$endpoint", "AZURE_OPENAI_DEPLOYMENT=$deployment"); Write-Host "Wrote app/.env (endpoint=$endpoint, deployment=$deployment)"
+  @pwsh -NoProfile -File scripts/app-env-sync.ps1
 
 # アプリを起動（要 az login。app/.env の AZURE_OPENAI_ENDPOINT / AZURE_OPENAI_DEPLOYMENT を使う）
 app-dev:
@@ -89,3 +89,30 @@ app-dev:
 # 例: just infer "日本の首都は？"  /  just infer "こんにちは" gpt-5
 infer prompt deployment="":
   @pwsh -NoProfile -File scripts/call-infer.ps1 -Prompt "{{prompt}}" -Deployment "{{deployment}}"
+
+# ----------------------------------------------------------------------------
+# アプリ経由のコントロールプレーン読み取り（ステップ2）。要 az login + Contributor 相当ロール。
+# az CLI 直叩き（deploy-list / models）と違い、アプリの ARM プロキシ経由で取得する。
+# ----------------------------------------------------------------------------
+
+# 起動中アプリの GET /deployments（作成済みデプロイ一覧）を叩く
+gw-deployments:
+  @pwsh -NoProfile -File scripts/call-get.ps1 -Path "/deployments"
+
+# 起動中アプリの GET /models（デプロイ可能なベースモデル一覧）を叩く
+gw-models:
+  @pwsh -NoProfile -File scripts/call-get.ps1 -Path "/models"
+
+# ----------------------------------------------------------------------------
+# アプリ経由のコントロールプレーン書き込み（ステップ3）。要 az login + Contributor ロール。
+# az CLI 直叩き（deploy-model / deploy-delete）と違い、アプリの ARM プロキシ経由で作成/削除する。
+# ----------------------------------------------------------------------------
+
+# アプリ経由でデプロイ作成。引数省略時は GPT-4.1 / GlobalStandard / TPM 10。
+# 例: just gw-deploy-create  /  just gw-deploy-create gpt-5 gpt-5 2025-08-07 GlobalStandard 10
+gw-deploy-create name="gpt-4.1" model="gpt-4.1" version="2025-04-14" sku="GlobalStandard" capacity="10":
+  @pwsh -NoProfile -File scripts/create-deployment.ps1 -DeploymentName "{{name}}" -ModelName "{{model}}" -ModelVersion "{{version}}" -Sku "{{sku}}" -Capacity {{capacity}}
+
+# アプリ経由でデプロイ削除（後片付け）。例: just gw-deploy-delete gpt-4.1
+gw-deploy-delete name:
+  @pwsh -NoProfile -File scripts/delete-deployment.ps1 -DeploymentName "{{name}}"
