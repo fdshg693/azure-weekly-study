@@ -7,6 +7,12 @@
 # ======= 参照用外部ライブラリコピー =======
 
 projects/chatbot/app/openai-node
+projects/agent_management/cyclejs
+projects/agent_management/azure-ai-projects
+
+# ======== 一時ファイル =======
+
+temp/
 
 # ======= Bicep ======= 
 
