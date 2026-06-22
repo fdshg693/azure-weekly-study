@@ -27,6 +27,13 @@ param tags object = {
   ManagedBy: 'Bicep'
 }
 
+@description('JWT 署名鍵（HMAC）。未指定なら毎デプロイで生成。api が発行し bff が検証する')
+@secure()
+param jwtSecret string = newGuid()
+
+@description('JWT 有効期間（秒）')
+param jwtTtlSeconds string = '3600'
+
 // グローバル一意 / 文字数制約に合わせて名前を組み立てる
 var names = {
   cosmos: toLower('cosmos-${prefix}-${suffix}')
@@ -36,8 +43,15 @@ var names = {
   bff: toLower('app-${prefix}-bff-${suffix}')
   func: toLower('func-${prefix}-${suffix}')
   storage: take(toLower('st${replace(prefix, '-', '')}${suffix}'), 24)
+  acsEmail: toLower('acs-email-${prefix}-${suffix}')
+  acs: toLower('acs-${prefix}-${suffix}')
   db: 'messageapp'
 }
+
+// 検証メールのリンクは BFF の公開オリジンを使う。App Service の既定ホスト名は
+// 名前から確定するので、bff モジュールの出力を待たずに組み立てられる
+// （functions → bff の循環依存を避けるため）。
+var bffPublicUrl = 'https://${names.bff}.azurewebsites.net'
 
 // --- データ層 ---------------------------------------------------------------
 module cosmos './modules/cosmos.bicep' = {
@@ -64,6 +78,16 @@ module plan './modules/plan.bicep' = {
   params: {
     location: location
     planName: names.plan
+    tags: tags
+  }
+}
+
+// --- 通信（ACS Email・検証メール送信） --------------------------------------
+module communication './modules/communication.bicep' = {
+  name: 'communication'
+  params: {
+    emailServiceName: names.acsEmail
+    communicationName: names.acs
     tags: tags
   }
 }
@@ -126,6 +150,15 @@ module api './modules/webapp.bicep' = {
         name: 'WEBSITES_PORT'
         value: '8000'
       }
+      // login が JWT を発行するための鍵 / 有効期間
+      {
+        name: 'JWT_SECRET'
+        value: jwtSecret
+      }
+      {
+        name: 'JWT_TTL_SECONDS'
+        value: jwtTtlSeconds
+      }
     ])
     tags: tags
   }
@@ -138,7 +171,25 @@ module functions './modules/functions.bicep' = {
     location: location
     functionAppName: names.func
     storageName: names.storage
-    appSettings: dataSettings
+    // データ接続に加え、検証メール送信(ACS)の設定を渡す
+    appSettings: concat(dataSettings, [
+      {
+        name: 'EMAIL_MODE'
+        value: 'acs'
+      }
+      {
+        name: 'APP_BASE_URL'
+        value: bffPublicUrl
+      }
+      {
+        name: 'ACS_CONNECTION_STRING'
+        value: communication.outputs.connectionString
+      }
+      {
+        name: 'ACS_SENDER_ADDRESS'
+        value: communication.outputs.senderAddress
+      }
+    ])
     tags: tags
   }
 }
@@ -169,6 +220,11 @@ module bff './modules/webapp.bicep' = {
         name: 'WEBSITE_NODE_DEFAULT_VERSION'
         value: '~20'
       }
+      // BFF が下流転送前に JWT を検証するための鍵（api と同じ値）
+      {
+        name: 'JWT_SECRET'
+        value: jwtSecret
+      }
     ]
     tags: tags
   }
@@ -179,6 +235,7 @@ output bffUrl string = 'https://${bff.outputs.defaultHostName}'
 output apiUrl string = 'https://${api.outputs.defaultHostName}'
 output functionsUrl string = 'https://${functions.outputs.defaultHostName}'
 output cosmosAccount string = cosmos.outputs.accountName
+output acsSenderAddress string = communication.outputs.senderAddress
 output functionAppName string = functions.outputs.functionAppName
 output apiAppName string = api.outputs.name
 output bffAppName string = bff.outputs.name

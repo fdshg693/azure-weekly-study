@@ -49,12 +49,18 @@ def init_cosmos():
     db.create_container_if_not_exists(
         id="messages", partition_key=PartitionKey(path="/pairKey")
     )
+    # V2: 友達リスト。owner（リストの持ち主）でパーティション分割し、
+    # 一覧取得を単一パーティション・クエリにする（conversation の pairKey と同じ発想）。
+    db.create_container_if_not_exists(
+        id="friends", partition_key=PartitionKey(path="/owner")
+    )
     return db
 
 
 _db = init_cosmos()
 users_container = _db.get_container_client("users")
 messages_container = _db.get_container_client("messages")
+friends_container = _db.get_container_client("friends")
 
 
 # --- Redis -----------------------------------------------------------------

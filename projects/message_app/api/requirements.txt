@@ -4,3 +4,6 @@ uvicorn[standard]==0.34.0
 azure-cosmos==4.9.0
 redis==5.2.1
 python-dotenv==1.0.1
+# V2: パスワードハッシュ照合 / JWT 発行
+bcrypt==4.2.1
+PyJWT==2.10.1

@@ -75,6 +75,21 @@ resource messagesContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/c
   }
 }
 
+// V2: 友達リスト。owner（リストの持ち主）でパーティション分割する。
+resource friendsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-11-15' = {
+  parent: database
+  name: 'friends'
+  properties: {
+    resource: {
+      id: 'friends'
+      partitionKey: {
+        paths: [ '/owner' ]
+        kind: 'Hash'
+      }
+    }
+  }
+}
+
 output endpoint string = account.properties.documentEndpoint
 output accountName string = account.name
 // 学習用ショートカット：本来キーは output せず、デプロイ後に az で取得するのが安全。

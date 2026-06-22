@@ -1,4 +1,7 @@
-# Azure Functions（送信処理）の依存
+# Azure Functions（書き込み処理）の依存
 azure-functions==1.21.3
 azure-cosmos==4.9.0
 redis==5.2.1
+# V2: パスワードハッシュ生成 / 検証メール送信(ACS)
+bcrypt==4.2.1
+azure-communication-email==1.0.0

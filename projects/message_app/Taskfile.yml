@@ -51,9 +51,14 @@ tasks:
       - pwsh -NoProfile -Command "Start-Process 'http://localhost:3000/'"
 
   seed:
-    desc: "動作確認用データ投入(alice/bob/carol とメッセージ)。要: 3 サービス起動済み"
+    desc: "動作確認用データ投入(alice/bob/carol を登録・検証・ログインしメッセージ)。要: 3 サービス起動済み"
     cmds:
       - pwsh -NoProfile -File scripts/seed.ps1
+
+  seed-auth:
+    desc: "認証フローのみ投入(サインアップ→検証リンク→ログイン→友達追加)。要: 3 サービス起動済み"
+    cmds:
+      - pwsh -NoProfile -File scripts/seed-auth.ps1
 
   # --- Azure デプロイ（実リソース作成・明示実行時のみ） ---------------------
   deploy:

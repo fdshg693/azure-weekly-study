@@ -10,7 +10,11 @@
     "REDIS_HOST": "localhost",
     "REDIS_PORT": "6379",
     "REDIS_SSL": "false",
-    "CACHE_TTL_SECONDS": "60"
+    "CACHE_TTL_SECONDS": "60",
+    "EMAIL_MODE": "local",
+    "APP_BASE_URL": "http://localhost:3000",
+    "ACS_CONNECTION_STRING": "",
+    "ACS_SENDER_ADDRESS": ""
   },
   "Host": {
     "CORS": "*",

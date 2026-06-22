@@ -3,23 +3,39 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>メッセージアプリ (MVP)</title>
+    <title>メッセージアプリ (V2)</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <!-- ログイン画面：ユーザー名を入れるだけ（認証なし） -->
+    <!-- ログイン/サインアップ画面：V2 は email + password 認証 -->
     <section id="login-view" class="view">
       <div class="login-box">
         <h1>メッセージアプリ</h1>
-        <p class="muted">ユーザー名を入力してログイン（認証なし MVP）</p>
-        <form id="login-form">
-          <input id="username-input" type="text" placeholder="ユーザー名" autocomplete="off" />
-          <button type="submit">入る</button>
+        <div class="tabs">
+          <button id="tab-login" class="tab active" type="button">ログイン</button>
+          <button id="tab-signup" class="tab" type="button">サインアップ</button>
+        </div>
+
+        <!-- ログイン -->
+        <form id="login-form" class="auth-form">
+          <input id="login-email" type="email" placeholder="メールアドレス" autocomplete="username" />
+          <input id="login-password" type="password" placeholder="パスワード" autocomplete="current-password" />
+          <button type="submit">ログイン</button>
         </form>
+
+        <!-- サインアップ -->
+        <form id="signup-form" class="auth-form hidden">
+          <input id="signup-email" type="email" placeholder="メールアドレス" autocomplete="email" />
+          <input id="signup-username" type="text" placeholder="ユーザー名" autocomplete="off" />
+          <input id="signup-password" type="password" placeholder="パスワード" autocomplete="new-password" />
+          <button type="submit">登録</button>
+        </form>
+
+        <p id="auth-message" class="auth-message"></p>
       </div>
     </section>
 
-    <!-- メイン画面：左にユーザー一覧、右に会話 -->
+    <!-- メイン画面：左にユーザー/友達、右に会話 -->
     <section id="main-view" class="view hidden">
       <header class="topbar">
         <span>ログイン中: <strong id="me"></strong></span>
@@ -27,6 +43,15 @@
       </header>
       <div class="layout">
         <aside class="sidebar">
+          <!-- 友達リスト（V2 追加） -->
+          <div class="sidebar-head">
+            <h2>友達</h2>
+            <button id="refresh-friends" class="ghost small" title="一覧を再取得">⟳</button>
+          </div>
+          <ul id="friend-list"></ul>
+          <p id="friends-cache" class="cache-badge"></p>
+
+          <!-- 全ユーザー（友達追加もここから） -->
           <div class="sidebar-head">
             <h2>ユーザー</h2>
             <button id="refresh-users" class="ghost small" title="一覧を再取得">⟳</button>

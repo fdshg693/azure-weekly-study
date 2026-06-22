@@ -38,3 +38,10 @@ REDIS_SSL = _bool("REDIS_SSL", False)
 
 # キャッシュ TTL（秒）。短めにして陳腐化→回復を体験しやすくする。
 CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "60"))
+
+# --- 認証（JWT） -----------------------------------------------------------
+# login(FastAPI) が HMAC 署名で発行し、BFF が同じ秘密鍵で検証する。
+# 秘密鍵は本来 Key Vault 管理が望ましい（V2 では .env / App Settings に留める）。
+JWT_SECRET = os.getenv("JWT_SECRET", "dev-insecure-secret-change-me")
+# 発行する JWT の有効期間（秒）。既定 1 時間。
+JWT_TTL_SECONDS = int(os.getenv("JWT_TTL_SECONDS", "3600"))

@@ -33,7 +33,21 @@ body {
   text-align: center;
 }
 .login-box h1 { margin-top: 0; }
-#login-form { display: flex; gap: 0.5rem; margin-top: 1rem; }
+
+/* 認証タブ（ログイン / サインアップ） */
+.tabs { display: flex; gap: 0.5rem; margin: 1rem 0 0.75rem; }
+.tab {
+  flex: 1; background: transparent; color: var(--muted);
+  border: 1px solid #3b4a63; border-radius: 8px; padding: 0.45rem;
+}
+.tab.active { background: var(--accent); color: #04283a; border-color: var(--accent); }
+
+/* 認証フォームは縦並び（email / username / password） */
+.auth-form { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
+.auth-message { font-size: 0.8rem; min-height: 1em; margin: 0.75rem 0 0; line-height: 1.4; }
+.auth-message.ok { color: #4ade80; }
+.auth-message.err { color: #f87171; }
+.auth-message.info { color: var(--muted); }
 
 input {
   flex: 1;
@@ -74,12 +88,15 @@ button.small { padding: 0.3rem 0.5rem; font-size: 0.85rem; }
   display: flex; justify-content: space-between; align-items: center;
 }
 .sidebar h2, .chat h2 { font-size: 1rem; margin: 0 0 0.5rem; }
-#user-list { list-style: none; padding: 0; margin: 0.5rem 0; }
-#user-list li {
-  padding: 0.55rem 0.7rem; border-radius: 8px; cursor: pointer; margin-bottom: 2px;
+#user-list, #friend-list { list-style: none; padding: 0; margin: 0.5rem 0; }
+#user-list li, #friend-list li {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.4rem;
+  padding: 0.45rem 0.6rem; border-radius: 8px; margin-bottom: 2px;
 }
-#user-list li:hover { background: var(--panel-2); }
-#user-list li.active { background: var(--mine); color: #fff; }
+#user-list li:hover, #friend-list li:hover { background: var(--panel-2); }
+#user-list li.active, #friend-list li.active { background: var(--mine); color: #fff; }
+.row-name { flex: 1; cursor: pointer; }
+#user-list li button, #friend-list li button { flex: none; }
 
 .chat { flex: 1; display: flex; flex-direction: column; padding: 1rem 1.25rem; }
 .chat-head { margin-bottom: 0.5rem; }

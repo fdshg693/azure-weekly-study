@@ -50,9 +50,16 @@ _cosmos = CosmosClient(
     url=COSMOS_ENDPOINT, credential=COSMOS_KEY, connection_verify=COSMOS_VERIFY_TLS
 )
 _db = _cosmos.create_database_if_not_exists(id=COSMOS_DB)
-_db.create_container_if_not_exists(id="users", partition_key=PartitionKey(path="/id"))
+# V2: users はサインアップ/検証で書き込むのでハンドルを保持する。
+users_container = _db.create_container_if_not_exists(
+    id="users", partition_key=PartitionKey(path="/id")
+)
 messages_container = _db.create_container_if_not_exists(
     id="messages", partition_key=PartitionKey(path="/pairKey")
+)
+# V2: 友達リスト。owner でパーティション分割（読み取り側 store.py と同じ）。
+friends_container = _db.create_container_if_not_exists(
+    id="friends", partition_key=PartitionKey(path="/owner")
 )
 
 cache = redis.Redis(

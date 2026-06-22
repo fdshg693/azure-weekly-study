@@ -1,12 +1,18 @@
 """読み取り API（FastAPI / App Service 想定）。
 
-責務は「読み取り」のみ：login(upsert) / users 一覧 / conversation 取得。
-すべて Redis を read-through キャッシュとして経由する（miss 時だけ Cosmos）。
-メッセージ送信(書き込み)は Functions 側が担当する。
+責務は「読み取り＋計算」：login(パスワード検証 → JWT 発行) / users 一覧 /
+conversation 取得 / friends 一覧。すべて Redis を read-through キャッシュとして
+経由する（miss 時だけ Cosmos）。状態を変える書き込み（signup / verify / メッセージ送信 /
+友達 追加・削除）は Functions 側が担当する（CQRS 的分離。PLAN.md 参照）。
+
+V2 の信頼境界：このサービスは BFF からの `X-User` を「検証済みの本人」として信頼する。
+login だけはトークン発行前の入口なので X-User を取らない（email/password で本人確認する）。
 """
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
+import bcrypt
+import jwt
 from fastapi import FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel
 
@@ -21,7 +27,8 @@ def _now_iso() -> str:
 
 
 class LoginBody(BaseModel):
-    username: str
+    email: str
+    password: str
 
 
 @app.get("/health")
@@ -31,17 +38,47 @@ def health():
 
 @app.post("/login")
 def login(body: LoginBody):
-    """username で upsert（無ければ作る = サインアップ兼ログイン）。"""
-    username = body.username.strip().lower()
-    if not username:
-        raise HTTPException(status_code=400, detail="username is required")
+    """email + password を検証し、検証済みなら JWT を発行する。
 
-    store.users_container.upsert_item(
-        {"id": username, "username": username, "createdAt": _now_iso()}
+    - email はパーティションキー(/id=username)ではないのでクロスパーティション・クエリ。
+      小規模学習では許容（KNOWLEDGE.md：頻出キーは将来ルックアップ設計で単一化）。
+    - パスワードは保存済みハッシュ(bcrypt)と照合。タイミング安全な比較は bcrypt が担う。
+    - 未検証(emailVerified=false)はログイン不可（検証ゲート）→ 403。
+    """
+    email = body.email.strip().lower()
+    if not email or not body.password:
+        raise HTTPException(status_code=400, detail="email and password are required")
+
+    # email でユーザーを引く（クロスパーティション）。曖昧化のため詳細は返さない。
+    items = list(
+        store.users_container.query_items(
+            query="SELECT * FROM c WHERE c.email=@email",
+            parameters=[{"name": "@email", "value": email}],
+        )
     )
-    # 新規ユーザーが増えたので users 一覧キャッシュを破棄（次回 miss で再構築）
-    store.cache.delete("users:all")
-    return {"username": username}
+    invalid = HTTPException(status_code=401, detail="invalid email or password")
+    if not items:
+        raise invalid
+    user = items[0]
+
+    password_hash = user.get("passwordHash") or ""
+    if not bcrypt.checkpw(body.password.encode("utf-8"), password_hash.encode("utf-8")):
+        raise invalid
+
+    if not user.get("emailVerified"):
+        # 未検証は理由を返す（検証ゲートの体験）。
+        raise HTTPException(status_code=403, detail="email is not verified")
+
+    # ステートレス JWT を発行。BFF が同じ JWT_SECRET / HS256 で検証する。
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": user["username"],
+        "email": user["email"],
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(seconds=config.JWT_TTL_SECONDS)).timestamp()),
+    }
+    token = jwt.encode(payload, config.JWT_SECRET, algorithm="HS256")
+    return {"token": token, "username": user["username"]}
 
 
 @app.get("/users")
@@ -94,3 +131,32 @@ def conversation(
     messages = [store.shape_message(m) for m in items]
     store.cache.set(cache_key, json.dumps(messages), ex=config.CACHE_TTL_SECONDS)
     return {"messages": messages, "cached": False}
+
+
+@app.get("/friends")
+def list_friends(x_user: str = Header(..., alias="X-User")):
+    """自分（X-User=owner）の友達一覧。`friends:{owner}` を read-through キャッシュ。
+
+    一方向・自己完結なので「自分の操作=自分のキャッシュ」だけで陳腐化が起きない
+    （他人の操作が owner のリストに影響しない）。詳細は PLAN.md / KNOWLEDGE.md。
+    """
+    owner = x_user.strip().lower()
+    if not owner:
+        raise HTTPException(status_code=400, detail="X-User is required")
+
+    cache_key = f"friends:{owner}"
+    cached = store.cache.get(cache_key)
+    if cached is not None:
+        return {"friends": json.loads(cached), "cached": True}
+
+    # miss: owner 単一パーティション・クエリで友達を時系列に並べる。
+    items = list(
+        store.friends_container.query_items(
+            query="SELECT * FROM c WHERE c.owner=@owner ORDER BY c.createdAt ASC",
+            parameters=[{"name": "@owner", "value": owner}],
+            partition_key=owner,
+        )
+    )
+    friends = [item["friend"] for item in items]
+    store.cache.set(cache_key, json.dumps(friends), ex=config.CACHE_TTL_SECONDS)
+    return {"friends": friends, "cached": False}
