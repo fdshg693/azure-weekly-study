@@ -1,102 +1,106 @@
-# MERMAID — 構成とフロー V2.0
+# MERMAID — 構成とフロー V3.0
 
-V1 の構成図・メッセージ陳腐化フローは `versions/v1/MERMAID.md` を参照。
-ここでは **V2 で追加する認証・友達リストのフロー** を示す。
+V1（構成図・メッセージ陳腐化フロー）は `versions/v1/MERMAID.md`、
+V2（認証・友達リストのフロー）は `versions/v2/MERMAID.md` を参照。
+ここでは **V3 で変わる「知り合い／友達の二段階関係」「友達ゲート送信」「双方向キャッシュ無効化」** を示す。
+コンポーネント構成は V2 から不変（新サービスなし）なので再掲しない。
 
-## コンポーネント構成（V2・ACS と JWT 検証を追加）
-
-```mermaid
-flowchart LR
-  Browser["ブラウザ<br/>JWT を localStorage 保持<br/>Authorization: Bearer"]
-  BFF["BFF (Express)<br/>**JWT 検証** → X-User 注入"]
-  API["読み取り API (FastAPI)<br/>login(JWT発行) / friends一覧 / 会話"]
-  FUNC["書き込み (Functions)<br/>signup / verify / friends追加削除 / 送信"]
-  ACS["ACS Email<br/>検証メール送信"]
-  COSMOS[("Cosmos DB<br/>users / messages / friends")]
-  REDIS[("Redis<br/>会話 / friends キャッシュ")]
-
-  Browser -- "静的配信 + /api/*（Bearer）" --> BFF
-  BFF -- "検証済み X-User で読み取り" --> API
-  BFF -- "検証済み X-User で書き込み" --> FUNC
-  BFF -. "login / verify は検証前(例外)" .-> API
-  FUNC -- "検証メール（acs時）" --> ACS
-  API -- "read-through" --> REDIS
-  FUNC -- "append / upsert" --> COSMOS
-  API -- "miss 時" --> COSMOS
-```
-
-## サインアップ → メール検証 → ログイン
+## 関係の状態遷移（知り合い → 友達）
 
 ```mermaid
-sequenceDiagram
-  participant U as ユーザー
-  participant BFF
-  participant FUNC as Functions
-  participant API as FastAPI
-  participant ACS as ACS Email
-  participant COSMOS as Cosmos
-
-  U->>BFF: POST /api/signup {email, username, password}
-  BFF->>FUNC: 転送（トークン不要）
-  FUNC->>COSMOS: users upsert（passwordHash / emailVerified=false / verifyToken）
-  alt EMAIL_MODE=acs
-    FUNC->>ACS: 検証リンク付きメールを送信
-    ACS-->>U: メール受信
-  else EMAIL_MODE=local
-    FUNC-->>U: リンクをコンソール/.verify-links に出力
-  end
-
-  U->>BFF: GET /api/verify?token=...（メールのリンク）
-  BFF->>FUNC: 転送
-  FUNC->>COSMOS: token 照合 → emailVerified=true / token 失効
-  FUNC-->>U: 検証完了
-
-  U->>BFF: POST /api/login {email, password}
-  BFF->>API: 転送
-  API->>COSMOS: email でユーザー取得（クロスパーティション）
-  API->>API: passwordHash 検証 + emailVerified 確認
-  API-->>U: 200 + JWT（未検証なら 403）
+stateDiagram-v2
+  [*] --> 無関係
+  無関係 --> 片方向: A が B を知り合い登録 (A→B)
+  片方向 --> 友達: B も A を知り合い登録 (B→A)（相互マッチ）
+  友達 --> 片方向: どちらかが知り合い解除
+  片方向 --> 無関係: 残りの片方向も解除
+  note right of 片方向
+    A→B のみ。B から見ると inbound。
+    メッセージは送れない（403）。
+  end note
+  note right of 友達
+    A→B かつ B→A。
+    メッセージ送受信できる。
+  end note
 ```
 
-## 認証済みリクエスト（BFF が信頼境界）
+## 知り合い追加と「他人のキャッシュ」無効化（V3 の肝）
 
-```mermaid
-sequenceDiagram
-  participant Browser
-  participant BFF
-  participant API as FastAPI / Functions
-
-  Browser->>BFF: GET /api/friends（Authorization: Bearer <JWT>）
-  alt JWT が有効
-    BFF->>BFF: 署名 / exp を検証 → sub=username 取得
-    BFF->>API: 転送（X-User: <username> を注入）
-    API-->>Browser: 200 データ
-  else 無効 / 改ざん / 失効
-    BFF-->>Browser: 401（下流へ流さない）
-  end
-```
-
-## 友達追加（自己完結：自分の操作 = 自分のキャッシュのみ）
+V2 と違い、A の操作は **B 側のキャッシュ**（inbound・相互成立時は友達）にも影響する。
 
 ```mermaid
 sequenceDiagram
   participant A as alice
   participant BFF
   participant FUNC as Functions
-  participant API as FastAPI
+  participant COSMOS as Cosmos(acquaintances)
+  participant REDIS as Redis
+
+  A->>BFF: POST /api/acquaintances {username: bob}（Bearer）
+  BFF->>FUNC: 転送（X-User: alice）
+  FUNC->>COSMOS: dual-write: out__alice__bob(pk=alice) と in__bob__alice(pk=bob) を upsert
+  FUNC->>COSMOS: in__alice__bob(pk=alice) は存在？（= bob→alice のミラー。単一パーティション）
+  FUNC->>REDIS: acq:alice 無効化（alice の知り合いが増えた）
+  FUNC->>REDIS: acqby:bob 無効化（bob の inbound が増えた）
+  alt bob→alice が既にある（相互マッチ成立）
+    FUNC->>REDIS: friends:alice と friends:bob を無効化
+    Note over FUNC,REDIS: A の操作が B のキャッシュにも及ぶ＝V2 では無かった構図
+  end
+  FUNC-->>A: 201
+```
+
+## 友達ゲート付きメッセージ送信＋双方向キャッシュ無効化
+
+```mermaid
+sequenceDiagram
+  participant A as alice
+  participant BFF
+  participant FUNC as Functions
   participant COSMOS as Cosmos
   participant REDIS as Redis
 
-  A->>BFF: POST /api/friends {username: bob}（Bearer）
+  A->>BFF: POST /api/messages {to: bob, text}（Bearer）
   BFF->>FUNC: 転送（X-User: alice）
-  FUNC->>COSMOS: friends upsert（id=alice__bob, owner=alice）
-  Note over FUNC,REDIS: bob のリストには何も作らない（一方向）
-  FUNC->>REDIS: friends:alice を削除（自分の操作 → 自分のキャッシュ）
-  FUNC-->>A: 201
+  FUNC->>COSMOS: 友達ゲート: out__alice__bob と in__alice__bob を partition=alice で 2 ポイントリード
+  alt 片方でも欠ける（友達でない）
+    FUNC-->>A: 403（友達でないので送れない）
+  else 両方あり（相互マッチ＝友達）
+    FUNC->>COSMOS: messages へ append
+    FUNC->>REDIS: conv:alice:{pair} を無効化
+    FUNC->>REDIS: conv:bob:{pair} を無効化
+    Note over FUNC,REDIS: V2 は受信者(bob)を放置＝陳腐化。V3 は双方を無効化。
+    FUNC-->>A: 201
+  end
+```
 
-  Note over A: 直後にリスト取得
-  A->>BFF: GET /api/friends
-  BFF->>API: 転送（X-User: alice）
-  Note over REDIS: friends:alice は miss → Cosmos から再構築
-  API-->>A: bob を含む最新リスト（即時反映・陳腐化なし）
+## 受信者側の読み取り（陳腐化が解消されている）
+
+```mermaid
+sequenceDiagram
+  participant B as bob
+  participant BFF
+  participant API as FastAPI
+  participant REDIS as Redis
+  participant COSMOS as Cosmos
+
+  Note over B: alice が直前に送信（conv:bob:{pair} は無効化済み）
+  B->>BFF: GET /api/conversation?with=alice（Bearer）
+  BFF->>API: 転送（X-User: bob）
+  API->>REDIS: conv:bob:{pair} を見る → miss（無効化済み）
+  API->>COSMOS: 会話を取り直して再構築
+  API-->>B: 最新（alice の新着を含む）。TTL を待たない＝陳腐化なし
+```
+
+## 友達一覧の導出（積集合）
+
+```mermaid
+flowchart LR
+  ME["me"]
+  ACQ["自分の知り合い<br/>WHERE owner=me AND direction='out'<br/>（単一パーティション）"]
+  INB["自分を知り合い登録している人(inbound)<br/>WHERE owner=me AND direction='in'<br/>（単一パーティション・dual-write のミラー）"]
+  FRIENDS["友達 = out と in の積集合<br/>friends:me にキャッシュ"]
+  ME --> ACQ
+  ME --> INB
+  ACQ --> FRIENDS
+  INB --> FRIENDS
 ```

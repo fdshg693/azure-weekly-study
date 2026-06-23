@@ -2,7 +2,7 @@
 
 メッセージアプリ。仕様・設計・用語・図は既存ドキュメントを参照し、ここでは**ファイル配置と実装規約**だけを示す。
 実装の際、または齟齬に気づいた際は最優先でこのドキュメントを更新する（あらゆるタスクに優先される）。
-v1・v2ともに実装済。
+v1・v2ともに実装済。**V3 はドキュメント（設計）のみ確定済で、コードは未実装**（コードは現状 V2 の挙動）。
 
 ## まずどのドキュメントを読むか
 
@@ -23,7 +23,17 @@ v1・v2ともに実装済。
 - 説明はバージョン間で重複させない：前バージョンで説明済みの内容は、次バージョンでは最小限の言及に留める（`README.md` 冒頭の方針に従う）。
 - コード自体はバージョンフォルダに分けず、ルート直下の各サービス（`api/` `bff/` `functions/` `infra/`）を直接更新する。`versions/` はドキュメントのみ。
 
-### 現行バージョン: V2.0（**実装済**）
+### 現行バージョン: V3.0（**ドキュメントのみ確定・コード未実装**）
+- ルート直下の `README/PLAN/KNOWLEDGE/MERMAID` は **V3.0**（設計確定）。V2 スナップショットは `versions/v2/`。
+- **コードはまだ V2 のまま**。次の実装タスクで以下を反映する（設計は各ドキュメント参照）：
+  - 「友達（一方向）」を **「知り合い（acquaintance）」に改名**。**「友達」は相互マッチ**の関係に意味変更。命名はドキュメント＋コードで一貫させる（PLAN.md「命名の移行表」）。
+  - Cosmos `friends`(PK `/owner`) → **`acquaintances`**（PK `/owner`、**dual-write**：1 登録=発信`out`／受信`in`の 2 ミラー文書、`direction`＋`peer`、id=`{direction}__{owner}__{peer}`）。`store.init_cosmos()` の作成対象も差し替え。
+  - `functions/`: `add_friend`/`remove_friend` → `add_acquaintance`/`remove_acquaintance`（route `acquaintances` / `acquaintances/{username}`）。追加/削除は**2 文書を冪等 upsert/delete**（多パーティション＝単一トランザクション不可、決定的 id で best-effort）。**メッセージ送信に友達ゲート（非友達は 403）と双方向キャッシュ無効化**を追加。
+  - `api/`: `GET /acquaintances`（知り合い＝`owner=me,direction=out`）/ `GET /acquaintances/inbound`（`owner=me,direction=in`）/ `GET /friends`（out と in の積集合）。**すべて owner=me の単一パーティション**。友達ゲートも送信者 partition の 2 ポイントリードで判定。
+  - キャッシュ再設計：`acq:{owner}` / `acqby:{target}` / `friends:{user}`(相互) / `conv:{viewer}:{pair}`。**書き込みは影響範囲の全キャッシュを無効化**（V2 の意図的陳腐化を撤廃）。
+  - `infra/` は変更なし（新 Azure リソースなし）。
+
+### 旧バージョン: V2.0（**実装済**）
 - V1（認証なし・メッセージ送受信）に加え、V2 で **パスワード認証 + メール検証** と **友達リスト** を実装済み。
 - 実装の所在（設計の根拠は各ドキュメント参照）：
   - `users` に `email`/`passwordHash`/`emailVerified`/`verifyToken`/`verifyTokenExpires` を追加。新コンテナ `friends`（PK `/owner`）。
